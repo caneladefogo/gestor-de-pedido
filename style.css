@@ -40,7 +40,6 @@
 }
 
 body { background: var(--flat-cream); }
-body::before { opacity: 0.025; }
 
 .top-nav {
     background: var(--primary-bg);
@@ -170,21 +169,6 @@ body {
     height: 100vh;
     overflow: hidden;
     position: relative;
-}
-
-body::before {
-    content: "";
-    position: fixed;
-    top: 55%;
-    left: 50%;
-    width: 380px;
-    height: 380px;
-    transform: translate(-50%, -50%);
-    background: url('logo.png') no-repeat center center;
-    background-size: contain;
-    opacity: 0.045;
-    pointer-events: none;
-    z-index: 0;
 }
 
 .top-nav {
