@@ -764,6 +764,7 @@ function renderQueueMetrics() {
     const lane = currentTab === 'pratos' || currentTab.startsWith('pratos-') || currentTab === 'chapeiro' ? 'pratos' : currentTab === 'caldos' || currentTab.startsWith('caldos-') ? 'caldos' : null;
     const stage = currentTab.endsWith('-preparo') ? 'em_preparo' : currentTab.endsWith('-pronto') ? 'pronto' : null;
     const totals = new Map();
+    const chapeiroTotals = { carne: 0, picanha: 0 };
     let pendingUnits = 0;
     let pendingOrders = 0;
     let oldestQueueTime = null;
@@ -780,12 +781,23 @@ function renderQueueMetrics() {
             const queuedAt = getOrderQueueTime(order);
             if (queuedAt > 0 && (oldestQueueTime === null || queuedAt < oldestQueueTime)) oldestQueueTime = queuedAt;
             const fullName = item.product && item.product.name ? item.product.name : 'Item sem nome';
+            if (currentTab === 'chapeiro') {
+                const chapaKey = fullName.toLowerCase().includes('picanha') ? 'picanha' : 'carne';
+                chapeiroTotals[chapaKey] += Number(item.qty) || 1;
+            }
             const baseName = fullName.split(' + ')[0].split(' (')[0].split(' - ')[0];
             totals.set(baseName, (totals.get(baseName) || 0) + (Number(item.qty) || 1));
         });
         if (orderHasPending) pendingOrders++;
     });
     const entries = [...totals.entries()].sort((a, b) => b[1] - a[1]);
+    if (currentTab === 'chapeiro') {
+        els.queueMetrics.innerHTML = `
+            <div class="queue-metric-card"><span>Carnes na Chapa</span><strong>${chapeiroTotals.carne}</strong></div>
+            <div class="queue-metric-card"><span>Picanhas na Chapa</span><strong>${chapeiroTotals.picanha}</strong></div>
+        `;
+        return;
+    }
     const oldestMinutes = oldestQueueTime === null ? 0 : Math.max(0, Math.floor((Date.now() - oldestQueueTime) / 60000));
     const summary = `<div class="queue-metric-card queue-metric-summary"><span>Pedidos no painel</span><strong>${pendingOrders}</strong></div>
         <div class="queue-metric-card queue-metric-summary"><span>Unidades no painel</span><strong>${pendingUnits}</strong></div>
