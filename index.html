@@ -1,0 +1,273 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+    <title>Pedidos - Canela de Fogo</title>
+    <link rel="stylesheet" href="style.css?v=20260823-2">
+</head>
+
+<body>
+    <header class="top-nav">
+        <div class="logo-area">
+            <img src="logo.png" class="brand-logo-img" alt="Canela de Fogo">
+            <div>
+                <span class="logo-title">Canela de Fogo</span>
+                <span class="logo-subtitle">CANTINHO</span>
+            </div>
+            <span id="conn-status" class="status-badge status-offline">● Conectando...</span>
+        </div>
+        <div class="header-actions">
+            <div class="table-info" id="waiter-display" title="Toque para trocar de atendente">
+                👤 Atendente: <strong>Nenhum</strong>
+            </div>
+            <a href="cozinha.html" class="module-link">Painel / Chapeiro</a>
+        </div>
+    </header>
+
+    <main class="app-container">
+        <!-- Tela de Seleção de Atendente / Garçom -->
+        <section id="login-screen" class="screen login-screen-layout view-active"
+            style="flex-direction: column; align-items: center; justify-content: center; min-height: 80vh; padding: 1.5rem 1rem;">
+            <div class="logo-hero-container">
+                <img src="logo.png" class="login-brand-logo" alt="Canela de Fogo">
+            </div>
+            <h2 style="margin-bottom: 0.2rem; color: var(--primary-bg); font-weight: 800; text-align: center;">Cantinho Canela de Fogo</h2>
+            <p style="color: #666; margin-bottom: 1.5rem; text-align: center; font-size: 0.95rem;">Selecione seu nome para iniciar o atendimento:</p>
+
+            <!-- Botões Rápidos dos Garçons Pré-definidos -->
+            <div class="waiter-selection-grid" style="display: grid; grid-template-columns: 1fr 1fr; gap: 1rem; width: 100%; max-width: 360px; margin-bottom: 1.5rem;">
+                <button class="btn-waiter-select" onclick="selectWaiterName('Emanuel')">
+                    <span style="font-size: 1.8rem;">👨‍🍳</span>
+                    <span>Emanuel</span>
+                </button>
+                <button class="btn-waiter-select" onclick="selectWaiterName('João')">
+                    <span style="font-size: 1.8rem;">👨‍🍳</span>
+                    <span>João</span>
+                </button>
+                <button class="btn-waiter-select" onclick="selectWaiterName('Joana')">
+                    <span style="font-size: 1.8rem;">👩‍🍳</span>
+                    <span>Joana</span>
+                </button>
+                <button class="btn-waiter-select" onclick="selectWaiterName('Jeferson')">
+                    <span style="font-size: 1.8rem;">👨‍🍳</span>
+                    <span>Jeferson</span>
+                </button>
+            </div>
+
+            <!-- Opção de Outro Nome -->
+            <div style="width: 100%; max-width: 360px; border-top: 1px solid #ddd; padding-top: 1rem; text-align: center;">
+                <details style="color: #666;">
+                    <summary style="cursor: pointer; font-size: 0.95rem; font-weight: bold; margin-bottom: 0.8rem;">Outro atendente? Digite aqui</summary>
+                    <div style="display: flex; gap: 0.5rem;">
+                        <input type="text" id="waiter-name-input" placeholder="Outro nome..."
+                            style="flex: 1; padding: 0.8rem; font-size: 1rem; border-radius: 8px; border: 2px solid #ccc; box-sizing: border-box;">
+                        <button id="btn-login"
+                            style="background: var(--primary-color); color: var(--primary-bg); border: none; padding: 0.8rem 1rem; font-weight: bold; border-radius: 8px; cursor: pointer;">Entrar</button>
+                    </div>
+                </details>
+            </div>
+        </section>
+
+        <!-- Tela de Pedidos Ativos / Histórico -->
+        <section id="active-orders-screen" class="screen">
+            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.5rem; flex-wrap: wrap; gap: 0.5rem;">
+                <div style="display:flex; align-items:center; gap: 0.5rem;">
+                    <h2 style="margin:0; font-size: 1.4rem;">Pedidos</h2>
+                    <select id="waiter-filter" style="padding: 0.4rem 0.6rem; border-radius: 8px; font-weight:bold; border: 1px solid #ccc;">
+                        <option value="meus">Meus Pedidos</option>
+                        <option value="todos">Todos os Pedidos</option>
+                    </select>
+                </div>
+                <button id="btn-new-order"
+                    style="background: #4CAF50; color: white; border: none; padding: 0.6rem 1.2rem; border-radius: 8px; font-weight: bold; cursor: pointer; font-size: 1rem; box-shadow: 0 2px 4px rgba(0,0,0,0.2);">➕ Novo Pedido</button>
+                <button id="btn-new-quick-order" class="new-quick-order-btn">⚡ Pedido Rápido</button>
+            </div>
+
+            <!-- Campo de Busca Rápida -->
+            <div class="search-bar-container" style="margin-bottom: 0.8rem;">
+                <input type="text" id="order-search-input" placeholder="🔍 Buscar por cliente ou senha (#001)..."
+                    style="width: 100%; padding: 0.7rem 1rem; font-size: 1rem; border-radius: 8px; border: 1px solid #ccc; box-sizing: border-box;">
+            </div>
+
+            <!-- Abas de Navegação -->
+            <div style="display: flex; gap: 0.4rem; margin-bottom: 0.8rem;">
+                <button id="wtab-fila" class="wtab-btn"
+                    style="background:var(--primary-color); color:#000; border:none; padding:0.6rem 0.4rem; font-weight:bold; border-radius:6px; flex:1; cursor:pointer; font-size:0.9rem;"
+                    onclick="switchWaiterTab('fila')">Na Fila <span id="badge-fila" class="tab-badge">0</span></button>
+                <button id="wtab-pronto" class="wtab-btn"
+                    style="background:#444; color:white; border:none; padding:0.6rem 0.4rem; font-weight:bold; border-radius:6px; flex:1; cursor:pointer; font-size:0.9rem;"
+                    onclick="switchWaiterTab('pronto')">Prontos <span id="badge-pronto" class="tab-badge">0</span></button>
+                <button id="wtab-entregue" class="wtab-btn"
+                    style="background:#444; color:white; border:none; padding:0.6rem 0.4rem; font-weight:bold; border-radius:6px; flex:1; cursor:pointer; font-size:0.9rem;"
+                    onclick="switchWaiterTab('entregue')">Histórico <span id="badge-entregue" class="tab-badge">0</span></button>
+            </div>
+
+            <!-- Painel de Resumo do Histórico (Apenas contagem de pedidos, sem valores financeiros) -->
+            <div id="history-summary-bar" class="history-summary hidden" style="background: #2d2d2d; color: white; padding: 0.8rem 1rem; border-radius: 8px; margin-bottom: 1rem; display: flex; justify-content: space-between; align-items: center; border-left: 4px solid var(--primary-color);">
+                <div>
+                    <div style="font-size: 0.85rem; color: #aaa;">Resumo dos Entregues:</div>
+                    <div style="font-weight: bold; font-size: 1.1rem; color: var(--primary-color);">
+                        <span id="hist-total-count">0</span> pedidos entregues
+                    </div>
+                </div>
+                <button id="btn-clear-history" style="background: #e74c3c; color: white; border: none; padding: 0.4rem 0.8rem; border-radius: 6px; font-weight: bold; cursor: pointer; font-size: 0.8rem;">
+                    🧹 Limpar Histórico
+                </button>
+            </div>
+
+            <div class="table-grid" id="active-orders-container">
+                <!-- Javascript will populate active orders here based on tabs -->
+            </div>
+        </section>
+
+        <!-- Tela de Cardápio -->
+        <section id="menu-screen" class="screen">
+            <div class="menu-header">
+                <button class="back-btn" id="back-to-orders">⬅ Voltar aos Pedidos</button>
+                <div class="menu-title-block">
+                    <h2 id="menu-order-title" style="margin:0; font-size:1.2rem;">Cardápio</h2>
+                    <strong id="menu-running-total" class="menu-running-total">Total: R$ 0,00</strong>
+                </div>
+            </div>
+            <div class="menu-categories" id="categories-container">
+                <!-- Javascript will populate categories -->
+            </div>
+            <div class="product-list" id="products-container">
+                <!-- Javascript will populate products -->
+            </div>
+        </section>
+    </main>
+
+    <!-- Barra do Carrinho Inferior -->
+    <div class="cart-bar hidden" id="cart-bar">
+        <div class="cart-info">
+            <span class="cart-items" style="font-size: 1.1rem; font-weight: bold;"><span id="cart-count">0</span> item(ns) no pedido</span>
+            <strong id="cart-bar-total" class="cart-bar-total">R$ 0,00</strong>
+        </div>
+        <button class="view-cart-btn" id="view-cart-btn">Ver Pedido 🛒</button>
+    </div>
+
+    <!-- Modal das Opções de Prato -->
+    <div id="options-modal" class="notification-overlay hidden">
+        <div class="notification-modal" style="border-color: var(--primary-color); max-width: 500px; width: 95%; max-height: 90vh; overflow-y: auto;">
+            <h2 id="modal-options-title" style="color: var(--primary-bg); font-size: 1.4rem;">Opções</h2>
+            <div id="options-modal-body" style="margin-bottom: 1.5rem; text-align: left; font-size: 1.1rem;">
+                <!-- Dinâmico JS -->
+            </div>
+            <button id="btn-confirm-options" class="btn-indo"
+                style="background: var(--primary-color); color: var(--primary-bg); font-size: 1.1rem; padding: 0.9rem;">CONFIRMAR OPÇÕES</button>
+            <button id="btn-cancel-options"
+                style="width: 100%; margin-top: 0.5rem; background: transparent; border: none; font-size: 1rem; cursor: pointer; color: #666; font-weight: bold; padding: 0.7rem;">Cancelar</button>
+        </div>
+    </div>
+
+    <!-- Modal Novo Pedido -->
+    <div id="new-order-modal" class="notification-overlay hidden">
+        <div class="notification-modal" style="border-color: var(--primary-color); max-width: 450px; width: 95%;">
+            <h2 style="color: var(--primary-bg); font-size: 1.5rem;">Novo Pedido</h2>
+            <div style="margin-bottom: 1.2rem; text-align: left; font-size: 1.05rem;">
+                
+                <label><strong>Nome do Cliente:</strong></label>
+                <input type="text" id="new-order-client" placeholder="Nome do cliente"
+                    style="width: 100%; padding: 0.8rem; margin-top: 0.4rem; font-size: 1.1rem; border-radius: 8px; border: 2px solid #ccc; margin-bottom: 1rem; box-sizing: border-box;">
+
+                <label><strong>Identificação / Mesa / Traço:</strong></label>
+                <input type="text" id="new-order-feature" placeholder="Ex: Mesa 01, Balcão, Camisa Preta"
+                    style="width: 100%; padding: 0.8rem; margin-top: 0.4rem; font-size: 1.1rem; border-radius: 8px; border: 2px solid #ccc; box-sizing: border-box;">
+
+                <label style="display:block; margin-top:1rem;"><strong>Prioridade:</strong></label>
+                <select id="new-order-priority" style="width:100%; padding:0.8rem; margin-top:0.4rem; font-size:1rem; border-radius:8px; border:2px solid #ccc; box-sizing:border-box;">
+                    <option value="normal">Normal</option>
+                    <option value="idoso60">Idoso 60+</option>
+                    <option value="idoso80">Idoso 80+</option>
+                    <option value="gestante">Gestante</option>
+                    <option value="pcd">Pessoa com deficiência</option>
+                    <option value="autista">Pessoa autista</option>
+                    <option value="colo">Pessoa com criança de colo</option>
+                </select>
+            </div>
+            <button id="btn-create-order" class="btn-indo"
+                style="background: var(--primary-color); color: var(--primary-bg); font-size: 1.1rem; padding: 0.9rem;">INICIAR PEDIDO (CARDÁPIO)</button>
+            <button id="btn-cancel-new-order"
+                style="width: 100%; margin-top: 0.5rem; background: transparent; border: none; font-size: 1rem; cursor: pointer; color: #666; font-weight: bold; padding: 0.7rem;">Cancelar</button>
+        </div>
+    </div>
+
+    <!-- Modal exclusivo para iniciar Pedido Rápido -->
+    <div class="notification-overlay hidden" id="quick-order-modal">
+        <div class="notification-modal quick-order-create-modal">
+            <h2>⚡ Criar Pedido Rápido</h2>
+            <p>Use este modo para bebidas e itens que não precisam passar pela cozinha.</p>
+            <p class="quick-order-warning">O pedido será finalizado diretamente e não aparecerá no painel da cozinha.</p>
+            <button id="btn-start-quick-order" class="btn-indo quick-order-start-btn">ABRIR CARDÁPIO RÁPIDO</button>
+            <button id="btn-cancel-quick-order" class="dialog-cancel-btn">Cancelar</button>
+        </div>
+    </div>
+
+    <!-- Modal do Carrinho -->
+    <div class="cart-modal hidden" id="cart-modal">
+        <div class="cart-modal-content">
+            <div class="cart-modal-header">
+                <h2>Pedido - <span id="cart-modal-table">Cliente</span></h2>
+                <button class="close-btn" id="close-cart">✕</button>
+            </div>
+            <div class="cart-items-list" id="cart-items-container">
+                <!-- Populate via JS -->
+            </div>
+            <div class="cart-modal-footer">
+                <textarea id="cart-notes" placeholder="Alguma observação geral? (Ex: Ponto da carne, limão e gelo...)"
+                    style="width: 100%; padding: 0.8rem; font-size: 1rem; border-radius: 8px; border: 1px solid #ccc; margin-bottom: 0.5rem; resize: none; font-family: inherit; box-sizing: border-box;"
+                    rows="2"></textarea>
+                <div id="cart-total-summary" class="cart-total-summary">Total do pedido: R$ 0,00</div>
+                <button type="button" id="toggle-change-btn" class="toggle-change-btn" aria-expanded="false">💵 Informar valor para troco</button>
+                <div class="change-panel hidden" id="change-panel">
+                    <label for="payment-received"><strong>Valor recebido para troco (opcional):</strong></label>
+                    <input type="number" id="payment-received" min="0" step="0.01" inputmode="decimal" placeholder="R$ 0,00">
+                    <div id="change-result" class="change-result">Troco: R$ 0,00</div>
+                </div>
+                <button class="checkout-btn" id="checkout-btn" style="margin-top: 0.5rem;">Enviar Pedido para Cozinha</button>
+                <button class="checkout-btn quick-order-btn hidden" id="quick-order-btn">Finalizar Pedido Rápido</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Modal de Detalhes do Pedido do Histórico -->
+    <div id="order-detail-modal" class="notification-overlay hidden">
+        <div class="notification-modal" style="border-color: #3498db; max-width: 500px; width: 95%; text-align: left; max-height: 85vh; overflow-y: auto;">
+            <div style="display: flex; justify-content: space-between; align-items: center; border-bottom: 2px solid #eee; padding-bottom: 0.5rem; margin-bottom: 1rem;">
+                <h2 id="detail-modal-title" style="color: var(--primary-bg); margin: 0; font-size: 1.3rem;">Detalhes do Pedido</h2>
+                <button id="close-detail-modal" style="background: none; border: none; font-size: 1.5rem; cursor: pointer; color: #888;">✕</button>
+            </div>
+            <div id="detail-modal-body" style="font-size: 1rem; color: #333; line-height: 1.5;">
+                <!-- Dinâmico JS -->
+            </div>
+            <div style="margin-top: 1.5rem; display: flex; gap: 0.5rem;">
+                <button id="btn-reopen-order" style="flex: 1; background: var(--primary-color); color: var(--primary-bg); border: none; padding: 0.8rem; border-radius: 8px; font-weight: bold; cursor: pointer;">
+                    ➕ Adicionar Mais Itens
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Modal de Notificação Fixa / Alarme Contínuo do Garçom -->
+    <div id="waiter-notif-overlay" class="notification-overlay hidden">
+        <div class="notification-modal pulse-ring" style="border-color: #e74c3c; border-width: 4px; max-width: 420px; width: 95%;">
+            <div style="font-size: 3.5rem; animation: bounce 0.8s infinite alternate;">🛎️</div>
+            <h2 style="color: #e74c3c; font-size: 1.7rem; margin-bottom: 0.5rem;">CHAMAR CLIENTE!</h2>
+            <p id="waiter-notif-msg" class="notification-msg" style="color: #222; font-size: 1.25rem;">O pedido está pronto no balcão!</p>
+            <p style="color: #666; font-size: 0.9rem; margin-bottom: 1.5rem;">O alarme sonoro continuará tocando até você clicar no botão abaixo:</p>
+            <button id="btn-indo-buscar" class="btn-indo" style="background: #27ae60; font-size: 1.3rem; padding: 1.2rem; letter-spacing: 0.5px;">
+                📣 CLIENTE CHAMADO
+            </button>
+        </div>
+    </div>
+
+    <!-- Biblioteca MQTT para rede em tempo real -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/mqtt/4.3.7/mqtt.min.js"></script>
+    <script src="persistence.js?v=20260823-2"></script>
+    <script src="app.js?v=20260823-6"></script>
+</body>
+
+</html>

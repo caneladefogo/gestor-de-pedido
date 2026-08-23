@@ -1,0 +1,179 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+    <title>Painel da Cozinha - Canela de Fogo</title>
+    <link rel="stylesheet" href="cozinha.css?v=20260823-8">
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/mqtt/4.3.7/mqtt.min.js"></script>
+</head>
+
+<body>
+    <header class="top-nav">
+        <div class="logo-area" style="display: flex; align-items: center; gap: 0.8rem;">
+            <img src="logo.png" class="brand-logo-img" alt="Canela de Fogo" style="width: 46px; height: 46px; border-radius: 50%; border: 2px solid var(--primary-color); box-shadow: 0 0 12px rgba(255, 187, 0, 0.5); object-fit: cover;">
+            <div>
+                <div style="font-size: 1.25rem; font-weight: 800; color: var(--primary-color); line-height: 1.1;">Cozinha • Canela de Fogo</div>
+                <div style="font-size: 0.72rem; color: #ffaa00; letter-spacing: 1.5px; font-weight: bold;">PAINEL KDS DE PRODUÇÃO</div>
+            </div>
+        </div>
+        <div class="header-actions">
+            <button id="test-sound-btn" onclick="testSoundKitchen()"
+                style="background: #27ae60; color: white; border: none; padding: 0.5rem 1rem; font-weight: bold; border-radius: 8px; cursor: pointer; box-shadow: 0 2px 5px rgba(0,0,0,0.3);">🔔 Testar Som</button>
+            <button id="audio-toggle-btn"
+                style="background: #e67e22; color: white; border: none; padding: 0.5rem 1rem; font-weight: bold; border-radius: 8px; cursor: pointer;">Som: Ligado 🔊</button>
+            <button id="beverage-stock-btn" class="stock-header-btn">Estoque de Bebidas</button>
+            <button id="prep-settings-btn" class="prep-settings-btn">Tempos de preparo</button>
+            <a href="index.html" class="module-link">Cadastro de Pedidos</a>
+            <div id="status" class="status-offline">Aguardando Início...</div>
+        </div>
+    </header>
+
+    <div id="beverage-stock-overlay" class="overlay hidden">
+        <div class="overlay-modal stock-modal">
+            <div class="stock-modal-header">
+                <div>
+                    <h2>Estoque de Bebidas</h2>
+                    <p>Digite o saldo atual ou use os atalhos de cada bebida.</p>
+                </div>
+                <button id="close-beverage-stock-btn" class="stock-close-btn">Fechar</button>
+            </div>
+
+            <div id="beverage-stock-list" class="beverage-stock-list"></div>
+        </div>
+    </div>
+
+    <div id="prep-settings-overlay" class="overlay hidden">
+        <div class="overlay-modal prep-settings-modal">
+            <div class="stock-modal-header"><div><h2>Tempos de preparo</h2><p>Valores em minutos usados para calcular a previsão da fila.</p></div><button id="close-prep-settings-btn" class="stock-close-btn">Fechar</button></div>
+            <div class="prep-settings-grid">
+                <label>Base — Carne na chapa<input id="base-carne-time" type="number" min="1"></label>
+                <label>Base — Picanha<input id="base-picanha-time" type="number" min="1"></label>
+                <label>Base — Caldo<input id="base-caldo-time" type="number" min="1"></label>
+                <label>Acréscimo — Carne à frente<input id="increment-carne-time" type="number" min="0"></label>
+                <label>Acréscimo — Picanha à frente<input id="increment-picanha-time" type="number" min="0"></label>
+                <label>Acréscimo — Caldo à frente<input id="increment-caldo-time" type="number" min="0"></label>
+            </div>
+            <button id="save-prep-settings-btn" class="edit-order-save-btn">Salvar tempos</button>
+        </div>
+    </div>
+
+    <div id="edit-order-overlay" class="overlay hidden">
+        <div class="overlay-modal edit-order-modal">
+            <div class="edit-order-header">
+                <div>
+                    <h2>Editar pedido <span id="edit-order-password"></span></h2>
+                    <p>As alterações serão sincronizadas sem reiniciar o tempo de espera.</p>
+                </div>
+                <button id="close-edit-order-btn" class="stock-close-btn">Fechar</button>
+            </div>
+            <div class="edit-order-fields">
+                <label>Cliente<input id="edit-order-client" type="text"></label>
+                <label>Identificação / mesa<input id="edit-order-feature" type="text"></label>
+                <label>Prioridade<select id="edit-order-priority">
+                    <option value="normal">Normal</option>
+                    <option value="idoso60">Idoso 60+</option>
+                    <option value="idoso80">Idoso 80+</option>
+                    <option value="gestante">Gestante</option>
+                    <option value="pcd">Pessoa com deficiência</option>
+                    <option value="autista">Pessoa autista</option>
+                    <option value="colo">Pessoa com criança de colo</option>
+                </select></label>
+                <label>Estado do pedido<select id="edit-order-status">
+                    <option value="preservar">Manter estados atuais</option>
+                    <option value="fila">Na fila</option>
+                    <option value="em_preparo">Em preparo</option>
+                    <option value="pronto">Pronto</option>
+                    <option value="entregue">Entregue</option>
+                </select></label>
+                <label class="edit-order-full">Observação<textarea id="edit-order-obs" rows="2"></textarea></label>
+            </div>
+            <div id="edit-order-items" class="edit-order-items"></div>
+            <button id="open-full-order-editor-btn" class="full-order-editor-btn">Abrir editor completo de itens e cardápio</button>
+            <button id="save-edit-order-btn" class="edit-order-save-btn">Salvar alterações</button>
+        </div>
+    </div>
+
+    <!-- Overlay para permitir o Áudio (Navegadores bloqueiam som automático) -->
+    <div id="audio-overlay" class="overlay">
+        <div class="overlay-modal">
+            <h2>Bem-vindo à Cozinha</h2>
+            <p>Clique no botão abaixo para ativar os alertas sonoros de novos pedidos.</p>
+            <button id="start-btn">Ativar Som e Iniciar Painel</button>
+        </div>
+    </div>
+
+    <!-- Barra de Controles Superiores: Abas e Busca -->
+    <div style="padding: 1rem 1.5rem 0 1.5rem;">
+        <div style="display: flex; gap: 0.5rem; margin-bottom: 0.8rem; flex-wrap: wrap;">
+            <button id="tab-pratos" class="tab-btn"
+                style="background:var(--primary-color); color:#000; border:none; padding:0.8rem 1rem; font-weight:bold; border-radius:8px; flex:1; min-width: 120px; cursor:pointer;"
+                onclick="switchTab('pratos')">Pratos <span id="count-pratos-total" class="badge-pill">0</span></button>
+            <button id="tab-caldos" class="tab-btn"
+                style="background:#444; color:white; border:none; padding:0.8rem 1rem; font-weight:bold; border-radius:8px; flex:1; min-width: 120px; cursor:pointer;"
+                onclick="switchTab('caldos')">Caldos <span id="count-caldos-total" class="badge-pill">0</span></button>
+            <button id="tab-entregues" class="tab-btn"
+                style="background:#444; color:white; border:none; padding:0.8rem 1rem; font-weight:bold; border-radius:8px; flex:1; min-width: 120px; cursor:pointer;"
+                onclick="switchTab('entregues')">Histórico Entregues <span id="kitchen-count-entregues" class="badge-pill">0</span></button>
+            <button id="tab-chapeiro" class="tab-btn"
+                style="background:#444; color:white; border:none; padding:0.8rem 1rem; font-weight:bold; border-radius:8px; flex:1; min-width: 120px; cursor:pointer;"
+                onclick="switchTab('chapeiro')">Chapeiro <span id="kitchen-count-chapeiro" class="badge-pill">0</span></button>
+        </div>
+
+        <div style="display: flex; gap: 0.5rem; align-items: center;">
+            <input type="text" id="kitchen-search" placeholder="🔍 Buscar pedido por senha (#001), cliente ou atendente..."
+                style="flex:1; padding: 0.7rem 1rem; background:#1c1c1c; color:#fff; border: 1px solid #444; border-radius: 8px; font-size: 1rem;">
+        </div>
+        <div id="queue-metrics" class="queue-metrics"></div>
+
+        <!-- Banner de Resumo da Cozinha para Entregues -->
+        <div id="kitchen-history-bar" class="hidden" style="background:#222; border-left: 4px solid #27ae60; padding: 0.8rem 1.2rem; border-radius: 8px; margin-top: 0.8rem; justify-content: space-between; align-items: center;">
+            <div style="font-weight: bold; color: #eee;">
+                Total de Pedidos Entregues: <span id="kitchen-total-entregues-val" style="color: #27ae60; font-size: 1.2rem;">0</span>
+            </div>
+            <div class="delivered-metrics">
+                <span>Hoje: <strong id="delivered-today-val">0</strong></span>
+                <span>Itens no histórico: <strong id="delivered-items-val">0</strong></span>
+                <span>Tempo médio real: <strong id="delivered-average-val">0 min</strong></span>
+            </div>
+            <div id="delivered-item-metrics" class="delivered-item-metrics"></div>
+            <div id="time-intelligence-metrics" class="time-intelligence-metrics"></div>
+            <button id="kitchen-clear-history-btn" style="background: #c0392b; color: white; border: none; padding: 0.5rem 1rem; border-radius: 6px; font-weight: bold; cursor: pointer; font-size: 0.85rem;">
+                🧹 Limpar Histórico Entregue
+            </button>
+            <button id="reset-passwords-btn" class="reset-passwords-btn">🔢 Reiniciar Senhas</button>
+        </div>
+    </div>
+
+    <main class="kitchen-board">
+        <div class="kanban-board" id="pratos-container">
+            <section class="kanban-lane"><h2>Na fila <span id="count-pratos-fila" class="badge-pill">0</span></h2><div class="column new-orders" id="pratos-fila-container"></div></section>
+            <section class="kanban-lane"><h2>Em preparo <span id="count-pratos-preparo" class="badge-pill">0</span></h2><div class="column new-orders" id="pratos-preparo-container"></div></section>
+            <section class="kanban-lane"><h2>Pronto <span id="count-pratos-pronto" class="badge-pill">0</span></h2><div class="column new-orders" id="pratos-pronto-container"></div></section>
+        </div>
+        <div class="kanban-board" id="caldos-container" style="display:none;">
+            <section class="kanban-lane"><h2>Na fila <span id="count-caldos-fila" class="badge-pill">0</span></h2><div class="column new-orders" id="caldos-fila-container"></div></section>
+            <section class="kanban-lane"><h2>Em preparo <span id="count-caldos-preparo" class="badge-pill">0</span></h2><div class="column new-orders" id="caldos-preparo-container"></div></section>
+            <section class="kanban-lane"><h2>Pronto <span id="count-caldos-pronto" class="badge-pill">0</span></h2><div class="column new-orders" id="caldos-pronto-container"></div></section>
+        </div>
+        <div class="column" id="entregues-container" style="display:none;">
+            <!-- Itens Entregues -->
+        </div>
+
+        <div class="column new-orders" id="chapeiro-container" style="display:none;">
+            <!-- Itens destinados à chapa -->
+        </div>
+
+        <div class="empty-state" id="empty-state" style="text-align: center; padding: 4rem 1rem;">
+            <img src="logo.png" alt="Canela de Fogo" style="width: 140px; height: 140px; border-radius: 50%; opacity: 0.2; margin-bottom: 1.2rem; filter: drop-shadow(0 0 20px rgba(255, 187, 0, 0.4)); object-fit: cover;">
+            <div style="font-size: 1.4rem; font-weight: bold; color: #ffbb00;">Cozinha em Dia! 🔥</div>
+            <div style="font-size: 1rem; color: #888; margin-top: 0.3rem;">Aguardando a chegada de novos pedidos dos garçons...</div>
+        </div>
+    </main>
+
+    <script src="persistence.js?v=20260823-3"></script>
+    <script src="cozinha.js?v=20260823-8"></script>
+</body>
+
+</html>
