@@ -253,6 +253,9 @@ window.switchTab = function (tabName) {
 
     if (els.kitchenHistoryBar) {
         if (tabName === 'entregues') {
+            els.kitchenHistoryBar.open = false;
+            const toggleLabel = els.kitchenHistoryBar.querySelector('.history-toggle-label');
+            if (toggleLabel) toggleLabel.textContent = 'Ver análise de itens e tempos';
             els.kitchenHistoryBar.classList.remove('hidden');
         } else {
             els.kitchenHistoryBar.classList.add('hidden');
@@ -261,6 +264,15 @@ window.switchTab = function (tabName) {
 
     renderAll();
 };
+
+if (els.kitchenHistoryBar) {
+    els.kitchenHistoryBar.addEventListener('toggle', () => {
+        const toggleLabel = els.kitchenHistoryBar.querySelector('.history-toggle-label');
+        if (toggleLabel) toggleLabel.textContent = els.kitchenHistoryBar.open
+            ? 'Recolher análise'
+            : 'Ver análise de itens e tempos';
+    });
+}
 
 function playSingleBell(freq, startTime) {
     if (!audioCtx) return;
@@ -664,7 +676,76 @@ function renderTimeIntelligence(deliveredOrders) {
         const p90 = samples.length ? Math.round(samples[Math.min(samples.length - 1, Math.ceil(samples.length * 0.9) - 1)]) : 0;
         return `<div class="time-intelligence-card"><strong>${group.label}</strong><span>Amostras <b>${samples.length}</b></span><span>Espera média real <b>${average} min</b></span><span>Mediana <b>${median} min</b></span><span>90% entregues em até <b>${p90} min</b></span><span>Base configurada <b>${group.configured} min</b></span><small>Referência para ajuste manual: mediana real de ${median} min.</small></div>`;
     });
-    target.innerHTML = `<h3>📊 Inteligência de tempos de espera</h3><p>Baseada no intervalo real entre envio e entrega dos pedidos do histórico.</p><div>${cards.join('')}</div>`;
+    const deliveredTime = order => {
+        const itemTimes = (order.items || []).map(item => Number(item.deliveredAt || 0)).filter(value => value > 0);
+        return Number(order.deliveredAt || 0) || (itemTimes.length ? Math.max(...itemTimes) : 0);
+    };
+    const plateItemType = item => {
+        const name = item && item.product && item.product.name || '';
+        if (name.includes('Picanha')) return 'picanha';
+        if (isChapaItem(item)) return 'carne';
+        return null;
+    };
+    const incrementGroups = [
+        { key: 'carne', label: 'Carne à frente', configured: prepTimeSettings.incrementCarne },
+        { key: 'picanha', label: 'Picanha à frente', configured: prepTimeSettings.incrementPicanha },
+        { key: 'caldo', label: 'Caldo à frente', configured: prepTimeSettings.incrementCaldo }
+    ];
+    const orderedDelivered = [...deliveredOrders].filter(order => deliveredTime(order) > 0).sort((a, b) => getOrderQueueTime(a) - getOrderQueueTime(b));
+    const incrementCards = incrementGroups.map(group => {
+        const samples = [];
+        orderedDelivered.forEach(targetOrder => {
+            const targetItems = targetOrder.items || [];
+            const targetIsPlate = targetItems.some(isChapaItem);
+            const targetIsBroth = targetItems.some(isCaldoItem);
+            if (group.key === 'caldo' ? !targetIsBroth : !targetIsPlate) return;
+            const targetStart = getOrderQueueTime(targetOrder);
+            const targetEnd = deliveredTime(targetOrder);
+            if (!(targetEnd > targetStart)) return;
+            let aheadCarne = 0;
+            let aheadPicanha = 0;
+            let aheadCaldo = 0;
+            orderedDelivered.forEach(aheadOrder => {
+                if (aheadOrder === targetOrder) return;
+                const aheadStart = getOrderQueueTime(aheadOrder);
+                const aheadEnd = deliveredTime(aheadOrder);
+                if (aheadStart > targetStart || aheadEnd <= targetStart) return;
+                (aheadOrder.items || []).forEach(item => {
+                    const qty = Math.max(1, Number(item.qty) || 1);
+                    const plateType = plateItemType(item);
+                    if (plateType === 'carne') aheadCarne += qty;
+                    else if (plateType === 'picanha') aheadPicanha += qty;
+                    else if (isCaldoItem(item)) aheadCaldo += qty;
+                });
+            });
+            let unitsAhead = group.key === 'carne' ? aheadCarne : group.key === 'picanha' ? aheadPicanha : aheadCaldo;
+            if (!unitsAhead) return;
+            if (group.key === 'carne' && aheadPicanha > 0) return;
+            if (group.key === 'picanha' && aheadCarne > 0) return;
+            const targetBase = targetItems.reduce((max, item) => {
+                const type = plateItemType(item);
+                if (type === 'picanha') return Math.max(max, prepTimeSettings.basePicanha);
+                if (type === 'carne') return Math.max(max, prepTimeSettings.baseCarne);
+                if (isCaldoItem(item)) return Math.max(max, prepTimeSettings.baseCaldo);
+                return max;
+            }, 0);
+            const waitMinutes = (targetEnd - targetStart) / 60000;
+            const observed = Math.max(0, (waitMinutes - targetBase) / unitsAhead);
+            if (Number.isFinite(observed) && observed <= 120) samples.push(observed);
+        });
+        samples.sort((a, b) => a - b);
+        const observed = samples.length ? Math.round(samples[Math.floor((samples.length - 1) / 2)] * 10) / 10 : null;
+        const tolerance = Math.max(1, group.configured * 0.25);
+        const status = observed === null
+            ? { css: 'insufficient', label: 'Amostras insuficientes', detail: 'Aguarde entregas com itens sobrepostos na fila.' }
+            : Math.abs(observed - group.configured) <= tolerance
+                ? { css: 'coherent', label: 'Coerente', detail: 'O valor configurado acompanha a mediana observada.' }
+                : observed > group.configured
+                    ? { css: 'under', label: 'Abaixo do observado', detail: 'O acréscimo real está maior que o configurado.' }
+                    : { css: 'over', label: 'Acima do observado', detail: 'O acréscimo configurado está maior que o observado.' };
+        return `<div class="increment-intelligence-card ${status.css}"><strong>${group.label}</strong><span>Configurado <b>${group.configured} min</b></span><span>Observado por item <b>${observed === null ? '—' : `${observed} min`}</b></span><span>Amostras válidas <b>${samples.length}</b></span><mark>${status.label}</mark><small>${status.detail}</small></div>`;
+    });
+    target.innerHTML = `<h3>📊 Inteligência de tempos de espera</h3><p>Baseada no intervalo real entre envio e entrega dos pedidos do histórico.</p><div>${cards.join('')}</div><section class="increment-intelligence"><h3>🧭 Coerência dos acréscimos</h3><p>Compara cada acréscimo configurado com a mediana reconstruída de pedidos que estavam simultaneamente na fila. A análise é apenas uma recomendação manual.</p><div>${incrementCards.join('')}</div></section>`;
 }
 
 function isChapaItem(item) {
@@ -712,7 +793,7 @@ function renderQueueMetrics() {
     `;
     const products = entries.length
         ? entries.map(([name, qty]) => `<div class="queue-metric-card"><span>${name}</span><strong>${qty}</strong></div>`).join('')
-        : '<div class="queue-metric-empty">Nenhum item aguardando preparo.</div>';
+        : '';
     els.queueMetrics.innerHTML = summary + products;
 }
 
@@ -726,6 +807,14 @@ function getPriorityRank(order) {
     if (order.priority === 'idoso80') return 3;
     if (['idoso60', 'gestante', 'pcd', 'autista', 'colo'].includes(order.priority)) return 2;
     return 0;
+}
+
+function getOrderQueuePosition(targetOrder) {
+    const operationalQueue = Object.values(globalOrders)
+        .filter(order => (order.items || []).some(item => ['fila', 'em_preparo'].includes(item.status || 'fila')))
+        .sort((a, b) => getPriorityRank(b) - getPriorityRank(a) || getOrderQueueTime(a) - getOrderQueueTime(b));
+    const index = operationalQueue.findIndex(order => order.id === targetOrder.id);
+    return index >= 0 ? index + 1 : null;
 }
 
 function getEstimatedPrepMinutes(targetOrder) {
@@ -762,6 +851,13 @@ function formatCountdown(milliseconds) {
     const seconds = totalSeconds % 60;
     const clock = `${hours > 0 ? String(hours).padStart(2, '0') + ':' : ''}${String(minutes).padStart(2, '0')}:${String(seconds).padStart(2, '0')}`;
     return overdue ? `Atrasado ${clock}` : clock;
+}
+
+function formatElapsed(milliseconds) {
+    const totalSeconds = Math.max(0, Math.floor(milliseconds / 1000));
+    const totalMinutes = Math.floor(totalSeconds / 60);
+    const seconds = totalSeconds % 60;
+    return `${String(totalMinutes).padStart(2, '0')}:${String(seconds).padStart(2, '0')}`;
 }
 
 function setupPrepSettings() {
@@ -993,13 +1089,23 @@ function renderCard(pedido, itemsArr, tabType, containerTarget) {
     const isQueue = tabType.endsWith('-fila');
     const isPrep = tabType.endsWith('-preparo');
     const isReady = tabType.endsWith('-pronto');
+    const queuePosition = isQueue ? getOrderQueuePosition(pedido) : null;
+    const queuePositionHTML = queuePosition
+        ? `<span class="queue-position-badge" title="Posição operacional considerando prioridade e horário">Fila: ${queuePosition}º</span>`
+        : '';
     if (isOperational) {
         const estimateMinutes = getEstimatedPrepMinutes(pedido);
-        const estimatedDeadline = getOrderQueueTime(pedido) + estimateMinutes * 60000;
-        const estimatedClock = new Date(estimatedDeadline).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' });
+        const queueStartedAt = getOrderQueueTime(pedido);
+        const estimatedDeadline = queueStartedAt + estimateMinutes * 60000;
         timerHTML = `<div class="order-timers">
-            <div id="time-wait-${pedido.id}-${tabType}">Espera do cliente: 00:00</div>
-            <div class="prep-estimate" id="time-estimate-${pedido.id}-${tabType}">Previsão de entrega: ${formatCountdown(estimatedDeadline - Date.now())} • até ${estimatedClock}</div>
+            <div class="timer-card wait-timer">
+                <span class="timer-title">⏱️ Espera do cliente</span>
+                <strong class="timer-value" id="time-wait-${pedido.id}-${tabType}">${formatElapsed(Date.now() - queueStartedAt)}</strong>
+            </div>
+            <div class="timer-card prep-estimate">
+                <span class="timer-title">🎯 Previsão de entrega</span>
+                <strong class="timer-value" id="time-estimate-${pedido.id}-${tabType}">${formatCountdown(estimatedDeadline - Date.now())}</strong>
+            </div>
         </div>`;
     } else if (tabType === 'entregues' && entregueHoraStr) {
         timerHTML = `<div style="background: #1c2833; color: #2ecc71; padding: 0.4rem; text-align: center; font-weight: bold; font-size: 0.9rem; border-bottom: 1px solid #333;">
@@ -1013,6 +1119,7 @@ function renderCard(pedido, itemsArr, tabType, containerTarget) {
                 <div style="display: flex; align-items: center; gap: 0.6rem;">
                     <h3 style="font-size: 1.8rem; margin: 0; color:var(--primary-color);">#${pedido.senha}</h3>
                     ${priorityBadge}
+                    ${queuePositionHTML}
                 </div>
                 <span class="order-time">${dataHoraStr}</span>
             </div>
@@ -1078,23 +1185,24 @@ function renderCard(pedido, itemsArr, tabType, containerTarget) {
         const timeEstimateEl = card.querySelector(`#time-estimate-${pedido.id}-${tabType}`);
         const estimateMinutes = getEstimatedPrepMinutes(pedido);
         const estimateDeadline = getOrderQueueTime(pedido) + estimateMinutes * 60000;
-        const estimateClock = new Date(estimateDeadline).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' });
-        const timerInterval = setInterval(() => {
+        let timerInterval = null;
+        const updateTimers = () => {
             const diffMs = Math.max(0, Date.now() - getOrderQueueTime(pedido));
             const diffMins = Math.floor(diffMs / 60000);
-            const diffSecs = Math.floor((diffMs % 60000) / 1000);
             if (timeWaitEl && document.body.contains(timeWaitEl)) {
-                timeWaitEl.textContent = `Espera do cliente: ${String(diffMins).padStart(2, '0')}:${String(diffSecs).padStart(2, '0')}`;
+                timeWaitEl.textContent = formatElapsed(diffMs);
                 if (diffMins >= 15) timeWaitEl.style.color = 'var(--danger)';
-            } else {
+            } else if (timerInterval) {
                 clearInterval(timerInterval);
             }
             if (timeEstimateEl && document.body.contains(timeEstimateEl)) {
                 const remaining = estimateDeadline - Date.now();
-                timeEstimateEl.textContent = `Previsão de entrega: ${formatCountdown(remaining)} • até ${estimateClock}`;
+                timeEstimateEl.textContent = formatCountdown(remaining);
                 timeEstimateEl.classList.toggle('estimate-overdue', remaining < 0);
             }
-        }, 1000);
+        };
+        updateTimers();
+        timerInterval = setInterval(updateTimers, 1000);
 
         const updateItemsStatus = status => {
             const now = Date.now();
@@ -1141,8 +1249,8 @@ function renderKitchenItem(item) {
             <span class="item-name">${baseName}
                 <span class="prep-block"><b>Arroz</b><span>${riceMatch ? riceMatch[1] : 'Não informado'}</span></span>
                 ${preparation}
-                <span class="prep-location ${consumption === 'Para Levar' ? 'to-go' : ''}">${consumption === 'Para Levar' ? '🛍️ PARA LEVAR' : '🍽️ COMER NO LOCAL'}</span>
             </span>
+            <span class="prep-location ${consumption === 'Para Levar' ? 'to-go' : ''}">${consumption === 'Para Levar' ? '🛍️ PARA LEVAR' : '🍽️ COMER NO LOCAL'}</span>
         </li>`;
     }
 
@@ -1156,8 +1264,8 @@ function renderKitchenItem(item) {
             <span class="item-name">Caldo de ${flavor}
                 <span class="prep-block"><b>Tamanho</b><span>${size}</span></span>
                 <span class="prep-block"><b>Acompanhamentos</b><span>${accompaniment === 'Sem Acomp.' ? 'Sem acompanhamento' : accompaniment}</span></span>
-                <span class="prep-location ${consumption === 'Para Levar' ? 'to-go' : ''}">${consumption === 'Para Levar' ? '🛍️ PARA LEVAR' : '🍽️ COMER NO LOCAL'}</span>
             </span>
+            <span class="prep-location ${consumption === 'Para Levar' ? 'to-go' : ''}">${consumption === 'Para Levar' ? '🛍️ PARA LEVAR' : '🍽️ COMER NO LOCAL'}</span>
         </li>`;
     }
 
@@ -1248,6 +1356,8 @@ function loadBeverageStock() {
         const data = saved && saved.items ? saved : createInitialBeverageStock();
         beverageNames.forEach(name => {
             if (!data.items[name]) data.items[name] = { qty: 0, minimum: 5, configured: false };
+            const minimum = Math.floor(Number(data.items[name].minimum));
+            data.items[name].minimum = Number.isFinite(minimum) && minimum >= 0 ? minimum : 5;
         });
         if (!Array.isArray(data.movements)) data.movements = [];
         if (!data.processedItems || typeof data.processedItems !== 'object') data.processedItems = {};
@@ -1287,6 +1397,8 @@ function receiveStockSnapshot(stock) {
     if (!beverageStock.processedItems) beverageStock.processedItems = {};
     beverageNames.forEach(name => {
         if (!beverageStock.items[name]) beverageStock.items[name] = { qty: 0, minimum: 5, configured: false };
+        const minimum = Math.floor(Number(beverageStock.items[name].minimum));
+        beverageStock.items[name].minimum = Number.isFinite(minimum) && minimum >= 0 ? minimum : 5;
     });
     localStorage.setItem('canela_beverage_stock', JSON.stringify(beverageStock));
     if (window.CanelaPersistence) CanelaPersistence.saveSnapshot('beverage_stock', beverageStock);
@@ -1357,6 +1469,8 @@ async function hydrateBeverageStock() {
         beverageStock.processedItems = { ...(beverageStock.processedItems || {}), ...localProcessed };
         beverageNames.forEach(name => {
             if (!beverageStock.items[name]) beverageStock.items[name] = { qty: 0, minimum: 5, configured: false };
+            const minimum = Math.floor(Number(beverageStock.items[name].minimum));
+            beverageStock.items[name].minimum = Number.isFinite(minimum) && minimum >= 0 ? minimum : 5;
         });
         saveBeverageStock(false, false);
         establishBeverageDeductionBaseline();
@@ -1372,10 +1486,15 @@ function renderBeverageStock() {
         const low = item.configured && item.qty <= item.minimum;
         return `<div class="beverage-stock-card ${low ? 'low-stock' : ''}">
             <strong>${name}</strong>
-            <label class="manual-stock-label">Saldo atual
-                <input type="number" class="manual-stock-input" data-product="${escapeKitchenHtml(name)}" min="0" step="1" inputmode="numeric" value="${item.configured ? Math.max(0, Number(item.qty) || 0) : ''}" placeholder="0">
-            </label>
-            <small>Mínimo: ${item.minimum}${low ? ' • Repor estoque' : ''}</small>
+            <div class="stock-number-fields">
+                <label class="manual-stock-label">Saldo atual
+                    <input type="number" class="manual-stock-input" data-product="${escapeKitchenHtml(name)}" min="0" step="1" inputmode="numeric" value="${item.configured ? Math.max(0, Number(item.qty) || 0) : ''}" placeholder="0">
+                </label>
+                <label class="manual-stock-label">Estoque mínimo
+                    <input type="number" class="minimum-stock-input" data-product="${escapeKitchenHtml(name)}" min="0" step="1" inputmode="numeric" value="${Math.max(0, Number(item.minimum) || 0)}">
+                </label>
+            </div>
+            <small class="stock-alert-text">${low ? '⚠️ Estoque mínimo atingido — repor' : `Alerta ao chegar em ${item.minimum} unidade(s)`}</small>
             <div class="stock-quick-actions">
                 <button type="button" class="quick-stock-btn minus-stock-btn" data-product="${escapeKitchenHtml(name)}" aria-label="Remover uma unidade" title="Remover uma unidade" ${!item.configured || item.qty <= 0 ? 'disabled' : ''}>➖</button>
                 <button type="button" class="quick-stock-btn plus-stock-btn" data-product="${escapeKitchenHtml(name)}" aria-label="Adicionar uma unidade" title="Adicionar uma unidade">➕</button>
@@ -1413,6 +1532,23 @@ function renderBeverageStock() {
             if (event.key === 'Enter') { event.preventDefault(); saveManualValue(); }
         };
     });
+    stockEls.list.querySelectorAll('.minimum-stock-input').forEach(input => {
+        const saveMinimumValue = () => {
+            const item = beverageStock.items[input.dataset.product];
+            const value = Math.floor(Number(input.value));
+            if (!item || !Number.isFinite(value) || value < 0) {
+                input.value = item ? item.minimum : 5;
+                return;
+            }
+            item.minimum = value;
+            saveBeverageStock();
+            renderBeverageStock();
+        };
+        input.onchange = saveMinimumValue;
+        input.onkeydown = event => {
+            if (event.key === 'Enter') { event.preventDefault(); saveMinimumValue(); }
+        };
+    });
 
     stockEls.list.querySelectorAll('.zero-stock-btn').forEach(button => {
         button.onclick = () => {
@@ -1440,3 +1576,19 @@ if (stockEls.openBtn) {
 
 establishBeverageDeductionBaseline();
 hydrateBeverageStock();
+
+function setupInternalPageTransitions() {
+    document.querySelectorAll('a[href]').forEach(link => {
+        link.addEventListener('click', event => {
+            if (event.defaultPrevented || event.button !== 0 || event.ctrlKey || event.metaKey || event.shiftKey || link.target === '_blank') return;
+            const targetUrl = new URL(link.href, window.location.href);
+            if (targetUrl.origin !== window.location.origin || targetUrl.href === window.location.href) return;
+            event.preventDefault();
+            document.body.classList.add('page-leaving');
+            setTimeout(() => { window.location.href = targetUrl.href; }, 180);
+        });
+    });
+    window.addEventListener('pageshow', () => document.body.classList.remove('page-leaving'));
+}
+
+setupInternalPageTransitions();

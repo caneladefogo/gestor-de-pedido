@@ -679,6 +679,29 @@ function updateTabBadges() {
     if (els.histTotalCount) els.histTotalCount.textContent = countEntregue;
 }
 
+function getWaiterQueueStart(order) {
+    const itemStarts = (order.items || [])
+        .filter(item => ['fila', 'em_preparo'].includes(item.status || 'fila'))
+        .map(item => Number(item.queuedAt || 0))
+        .filter(value => Number.isFinite(value) && value > 0);
+    const fallback = Number(order.startedAt || order.timestamp || 0);
+    return itemStarts.length ? Math.min(...itemStarts) : (Number.isFinite(fallback) && fallback > 0 ? fallback : Date.now());
+}
+
+function getWaiterPriorityRank(order) {
+    if (order.priority === 'idoso80') return 3;
+    if (['idoso60', 'gestante', 'pcd', 'autista', 'colo'].includes(order.priority)) return 2;
+    return 0;
+}
+
+function getWaiterQueuePosition(targetOrder) {
+    const queue = Object.values(globalActiveOrders)
+        .filter(order => (order.items || []).some(item => ['fila', 'em_preparo'].includes(item.status || 'fila')))
+        .sort((a, b) => getWaiterPriorityRank(b) - getWaiterPriorityRank(a) || getWaiterQueueStart(a) - getWaiterQueueStart(b));
+    const index = queue.findIndex(order => order.id === targetOrder.id);
+    return index >= 0 ? index + 1 : null;
+}
+
 function renderActiveOrders() {
     updateTabBadges();
     els.activeOrdersContainer.innerHTML = '';
@@ -731,6 +754,10 @@ function renderActiveOrders() {
         const priorityLabels = { idoso60: '👴 Idoso 60+', idoso80: '⭐ Idoso 80+', gestante: '🤰 Gestante', pcd: '♿ PCD', autista: '♾️ Autista', colo: '👶 Criança de colo' };
         const priorityBadgeHTML = order.priority && order.priority !== 'normal'
             ? `<span class="priority-badge">${priorityLabels[order.priority] || 'Prioridade'}</span>` : '';
+        const queuePosition = currentWaiterTab === 'fila' ? getWaiterQueuePosition(order) : null;
+        const queuePositionHTML = queuePosition
+            ? `<span class="waiter-queue-position">Fila: ${queuePosition}º</span>`
+            : '';
 
         const headerStr = `
             <div style="display:flex; justify-content:space-between; align-items:center;">
@@ -738,6 +765,7 @@ function renderActiveOrders() {
                     <span class="senha-tag">#${order.senha}</span>
                     ${tipoBadgeHTML}
                     ${priorityBadgeHTML}
+                    ${queuePositionHTML}
                 </div>
                 <span style="font-size:0.85rem; color:#666; font-weight:normal;">${horaStr}</span>
             </div>
@@ -805,9 +833,7 @@ function renderActiveOrders() {
     if (!hasAny) {
         els.activeOrdersContainer.innerHTML = `
             <div style="grid-column: 1 / -1; text-align: center; color: #777; padding: 3rem 1rem;">
-                <div style="font-size: 2.5rem; margin-bottom: 0.5rem;">🍽️</div>
-                <p style="font-size: 1.1rem; font-weight: bold;">Nenhum pedido encontrado nesta aba.</p>
-                <p style="font-size: 0.9rem; color: #999;">${query ? 'Tente limpar a busca.' : 'Os pedidos adicionados aparecerão aqui.'}</p>
+                <img src="logo.png" alt="Canela de Fogo" style="width: 140px; height: 140px; border-radius: 50%; opacity: 0.2; margin-bottom: 1.2rem; filter: drop-shadow(0 0 20px rgba(255, 187, 0, 0.4)); object-fit: cover;">
             </div>
         `;
     }
@@ -1011,11 +1037,11 @@ window.openProductOptions = function (productId, editIndex = null) {
             </select>
             <label><strong>3. Acompanhamentos?</strong></label>
             <div style="margin: 0.5rem 0 1rem 0; background:rgba(0,0,0,0.05); padding:1rem; border-radius:8px; border:1px solid #ddd;">
-                <label style="display:block; margin-bottom:0.5rem;"><input type="checkbox" name="caldo-acc" value="Calabresa"> Calabresa</label>
-                <label style="display:block; margin-bottom:0.5rem;"><input type="checkbox" name="caldo-acc" value="Ovo"> Ovo</label>
-                <label style="display:block; margin-bottom:0.5rem;"><input type="checkbox" name="caldo-acc" value="Macarrão"> Macarrão</label>
-                <label style="display:block; margin-bottom:0.5rem;"><input type="checkbox" name="caldo-acc" value="Bacon"> Bacon</label>
-                <label style="display:block; margin-bottom:0.5rem;"><input type="checkbox" name="caldo-acc" value="Cheiro Verde"> Cheiro Verde</label>
+                <label class="option-checkbox"><input type="checkbox" name="caldo-acc" value="Calabresa"><span>Calabresa</span></label>
+                <label class="option-checkbox"><input type="checkbox" name="caldo-acc" value="Ovo"><span>Ovo</span></label>
+                <label class="option-checkbox"><input type="checkbox" name="caldo-acc" value="Macarrão"><span>Macarrão</span></label>
+                <label class="option-checkbox"><input type="checkbox" name="caldo-acc" value="Bacon"><span>Bacon</span></label>
+                <label class="option-checkbox"><input type="checkbox" name="caldo-acc" value="Cheiro Verde"><span>Cheiro Verde</span></label>
             </div>
             <label><strong>4. Local do Consumo:</strong></label>
             <select id="caldo-local" style="width:100%; padding:0.8rem; margin:0.5rem 0 1rem 0; border-radius:8px;">
@@ -1043,7 +1069,7 @@ window.openProductOptions = function (productId, editIndex = null) {
             ? ["Tropeiro", "Salada", "Vinagrete", "Farofa", "Macaxeira", "Vatapá"]
             : ["Tropeiro", "Salada", "Vinagrete", "Farofa", "Macaxeira", "Maionese", "Batata Palha", "Vatapá"];
 
-        let extrasHTML = extras.map(e => `<label style="display:block; margin-bottom:0.5rem;"><input type="checkbox" name="prato-retira" value="${e}"> ${e}</label>`).join('');
+        let extrasHTML = extras.map(e => `<label class="option-checkbox"><input type="checkbox" name="prato-retira" value="${e}"><span>${e}</span></label>`).join('');
 
         els.optionsModalBody.innerHTML = `
             <label><strong>1. Tipo de Arroz:</strong></label>
@@ -1564,5 +1590,21 @@ async function keepScreenAlive() {
 
 document.body.addEventListener('click', keepScreenAlive);
 document.body.addEventListener('touchstart', keepScreenAlive);
+
+function setupInternalPageTransitions() {
+    document.querySelectorAll('a[href]').forEach(link => {
+        link.addEventListener('click', event => {
+            if (event.defaultPrevented || event.button !== 0 || event.ctrlKey || event.metaKey || event.shiftKey || link.target === '_blank') return;
+            const targetUrl = new URL(link.href, window.location.href);
+            if (targetUrl.origin !== window.location.origin || targetUrl.href === window.location.href) return;
+            event.preventDefault();
+            document.body.classList.add('page-leaving');
+            setTimeout(() => { window.location.href = targetUrl.href; }, 180);
+        });
+    });
+    window.addEventListener('pageshow', () => document.body.classList.remove('page-leaving'));
+}
+
+setupInternalPageTransitions();
 
 init();
