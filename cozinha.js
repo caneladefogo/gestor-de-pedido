@@ -810,9 +810,12 @@ function renderQueueMetrics() {
 }
 
 function getOrderQueueTime(pedido) {
-    const rawStart = Number(pedido.startedAt || pedido.timestamp || 0);
-    if (!Number.isFinite(rawStart) || rawStart <= 0) return Date.now();
-    return Math.min(rawStart, Date.now());
+    const itemQueueTimes = (pedido.items || []).map(item => Number(item.queuedAt || 0));
+    const validStarts = [Number(pedido.startedAt || 0), Number(pedido.timestamp || 0), ...itemQueueTimes]
+        .filter(value => Number.isFinite(value) && value > 0);
+    const fixedStart = validStarts.length ? Math.min(...validStarts) : Date.now();
+    if (!(Number(pedido.startedAt) > 0)) pedido.startedAt = fixedStart;
+    return Math.min(fixedStart, Date.now());
 }
 
 function getPriorityRank(order) {
@@ -855,6 +858,23 @@ function getEstimatedPrepMinutes(targetOrder) {
     return Math.max(plateMinutes, brothMinutes, 1);
 }
 
+function ensureOrderTimingMetadata(order) {
+    let changed = false;
+    const hadFixedStart = Number(order.startedAt) > 0;
+    const queueStartedAt = getOrderQueueTime(order);
+    if (!hadFixedStart) {
+        order.startedAt = queueStartedAt;
+        changed = true;
+    }
+    if (!(Number(order.estimatedReadyAt) > 0)) {
+        const estimateMinutes = getEstimatedPrepMinutes(order);
+        order.estimatedPrepMinutesAtEntry = estimateMinutes;
+        order.estimatedReadyAt = queueStartedAt + estimateMinutes * 60000;
+        changed = true;
+    }
+    return changed;
+}
+
 function formatCountdown(milliseconds) {
     const overdue = milliseconds < 0;
     const totalSeconds = Math.max(0, Math.floor(Math.abs(milliseconds) / 1000));
@@ -894,6 +914,11 @@ function setupPrepSettings() {
 }
 
 function renderAll() {
+    let timingWasNormalized = false;
+    Object.values(globalOrders).forEach(order => {
+        if (ensureOrderTimingMetadata(order)) timingWasNormalized = true;
+    });
+    if (timingWasNormalized) saveStoredOrders();
     updateKitchenCounters();
     renderQueueMetrics();
 
@@ -1106,9 +1131,8 @@ function renderCard(pedido, itemsArr, tabType, containerTarget) {
         ? `<span class="queue-position-badge" title="Posição operacional considerando prioridade e horário">Fila: ${queuePosition}º</span>`
         : '';
     if (isOperational) {
-        const estimateMinutes = getEstimatedPrepMinutes(pedido);
         const queueStartedAt = getOrderQueueTime(pedido);
-        const estimatedDeadline = queueStartedAt + estimateMinutes * 60000;
+        const estimatedDeadline = Number(pedido.estimatedReadyAt) || queueStartedAt + getEstimatedPrepMinutes(pedido) * 60000;
         timerHTML = `<div class="order-timers">
             <div class="timer-card wait-timer">
                 <span class="timer-title">⏱️ Espera do cliente</span>
@@ -1195,8 +1219,7 @@ function renderCard(pedido, itemsArr, tabType, containerTarget) {
     if (isOperational) {
         const timeWaitEl = card.querySelector(`#time-wait-${pedido.id}-${tabType}`);
         const timeEstimateEl = card.querySelector(`#time-estimate-${pedido.id}-${tabType}`);
-        const estimateMinutes = getEstimatedPrepMinutes(pedido);
-        const estimateDeadline = getOrderQueueTime(pedido) + estimateMinutes * 60000;
+        const estimateDeadline = Number(pedido.estimatedReadyAt) || getOrderQueueTime(pedido) + getEstimatedPrepMinutes(pedido) * 60000;
         let timerInterval = null;
         const updateTimers = () => {
             const diffMs = Math.max(0, Date.now() - getOrderQueueTime(pedido));

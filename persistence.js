@@ -128,6 +128,14 @@
         merged.removedItemIds = [...removedIds];
         merged.items = merged.items.filter(item => !item.id || !removedIds.has(item.id));
         merged.timestamp = Number(current.timestamp || incoming.timestamp || Date.now());
+        const validStarts = [current.startedAt, incoming.startedAt, merged.timestamp]
+            .map(Number)
+            .filter(value => Number.isFinite(value) && value > 0);
+        merged.startedAt = validStarts.length ? Math.min(...validStarts) : Date.now();
+        const currentDeadline = Number(current.estimatedReadyAt || 0);
+        const incomingDeadline = Number(incoming.estimatedReadyAt || 0);
+        merged.estimatedReadyAt = currentDeadline > 0 ? currentDeadline : (incomingDeadline > 0 ? incomingDeadline : null);
+        merged.estimatedPrepMinutesAtEntry = Number(current.estimatedPrepMinutesAtEntry || incoming.estimatedPrepMinutesAtEntry || 0) || null;
         merged.updatedAt = Math.max(currentRevision, incomingRevision);
 
         const currentNoteRevision = Number(current.kitchenNoteUpdatedAt || 0);
