@@ -10,9 +10,6 @@ const els = {
     pratosFilaContainer: document.getElementById('pratos-fila-container'),
     pratosPreparoContainer: document.getElementById('pratos-preparo-container'),
     pratosProntoContainer: document.getElementById('pratos-pronto-container'),
-    caldosFilaContainer: document.getElementById('caldos-fila-container'),
-    caldosPreparoContainer: document.getElementById('caldos-preparo-container'),
-    caldosProntoContainer: document.getElementById('caldos-pronto-container'),
     entreguesContainer: document.getElementById('entregues-container'),
     chapeiroContainer: document.getElementById('chapeiro-container'),
     status: document.getElementById('status'),
@@ -21,11 +18,7 @@ const els = {
     countPratosFila: document.getElementById('count-pratos-fila'),
     countPratosPreparo: document.getElementById('count-pratos-preparo'),
     countPratosPronto: document.getElementById('count-pratos-pronto'),
-    countCaldosFila: document.getElementById('count-caldos-fila'),
-    countCaldosPreparo: document.getElementById('count-caldos-preparo'),
-    countCaldosPronto: document.getElementById('count-caldos-pronto'),
     countPratosTotal: document.getElementById('count-pratos-total'),
-    countCaldosTotal: document.getElementById('count-caldos-total'),
     countEntregues: document.getElementById('kitchen-count-entregues'),
     countChapeiro: document.getElementById('kitchen-count-chapeiro'),
     queueMetrics: document.getElementById('queue-metrics'),
@@ -218,6 +211,19 @@ els.startBtn.onclick = () => {
     renderAll();
 };
 
+const closeAudioOverlayBtn = document.getElementById('close-audio-overlay-btn');
+if (closeAudioOverlayBtn) {
+    closeAudioOverlayBtn.onclick = () => {
+        els.overlay.classList.add('hidden');
+        audioEnabled = false;
+        localStorage.setItem('canela_audio_pref', 'off');
+        if (els.audioToggleBtn) els.audioToggleBtn.textContent = 'Som: OFF 🔇';
+        connectMQTT();
+        keepScreenAlive();
+        renderAll();
+    };
+}
+
 if (els.audioToggleBtn) {
     els.audioToggleBtn.onclick = () => {
         audioEnabled = !audioEnabled;
@@ -408,23 +414,31 @@ function connectMQTT() {
             if (data.type === 'SYNC_ALL_ORDERS' && Array.isArray(data.orders)) {
                 applyDeletedOrderMarkers(data.deletedOrderIds);
                 if (data.historyClearedAt) applyHistoryClear(data.historyClearedAt);
-                if (data.prepTimeSettings && Number(data.prepTimeSettings.updatedAt || 0) >= Number(prepTimeSettings.updatedAt || 0)) savePrepTimeSettings(data.prepTimeSettings, false);
+                if (data.prepTimeSettings && Number(data.prepTimeSettings.updatedAt || 0) > Number(prepTimeSettings.updatedAt || 0)) savePrepTimeSettings(data.prepTimeSettings, false);
+                let ordersChanged = false;
                 data.orders.forEach(ord => {
                     if (deletedOrderIds[ord.id]) return;
                     if (shouldSuppressDeliveredOrder(ord)) return;
                     const safeId = ord.id || `ord_${ord.senha}_${ord.timestamp || Date.now()}`;
                     ord.id = safeId;
                     const current = globalOrders[safeId];
-                    globalOrders[safeId] = window.mergeCanelaOrders ? mergeCanelaOrders(current, ord) : ord;
+                    const merged = window.mergeCanelaOrders ? mergeCanelaOrders(current, ord) : ord;
+                    if (!current || JSON.stringify(current) !== JSON.stringify(merged)) {
+                        globalOrders[safeId] = merged;
+                        ordersChanged = true;
+                    }
                 });
-                saveStoredOrders();
-                reconcileDeliveredBeverages();
-                renderAll();
+                if (ordersChanged) {
+                    saveStoredOrders();
+                    reconcileDeliveredBeverages();
+                    renderAll();
+                }
                 return;
             }
 
             // 3. Limpeza de Histórico
             if (data.type === 'CLEAR_HISTORY') {
+                applyDeletedOrderMarkers(data.deletedOrderIds);
                 applyHistoryClear(data.clearedAt);
                 renderAll();
                 return;
@@ -437,7 +451,7 @@ function connectMQTT() {
             }
 
             if (data.type === 'PREP_TIME_SETTINGS' && data.settings) {
-                if (Number(data.settings.updatedAt || 0) >= Number(prepTimeSettings.updatedAt || 0)) savePrepTimeSettings(data.settings, false);
+                if (Number(data.settings.updatedAt || 0) > Number(prepTimeSettings.updatedAt || 0)) savePrepTimeSettings(data.settings, false);
                 return;
             }
 
@@ -461,6 +475,7 @@ function connectMQTT() {
             let isNewAction = false;
             const existing = globalOrders[safeId];
             const mergedPedido = window.mergeCanelaOrders ? mergeCanelaOrders(existing, pedido) : pedido;
+            const orderChanged = !existing || JSON.stringify(existing) !== JSON.stringify(mergedPedido);
             if (!existing) {
                 const hasFila = mergedPedido.items.some(i => (i.status || 'fila') === 'fila');
                 if (hasFila) isNewAction = true;
@@ -470,10 +485,12 @@ function connectMQTT() {
                 if (newFila > oldFila) isNewAction = true;
             }
 
-            globalOrders[safeId] = mergedPedido;
-            saveStoredOrders();
-            reconcileDeliveredBeverages();
-            renderAll();
+            if (orderChanged) {
+                globalOrders[safeId] = mergedPedido;
+                saveStoredOrders();
+                reconcileDeliveredBeverages();
+                renderAll();
+            }
 
             if (data.type === 'ORDER_UPDATE') {
                 publishUpdate({ type: 'ORDER_RECEIVED_ACK', orderId: safeId, updatedAt: mergedPedido.updatedAt || mergedPedido.timestamp || Date.now() }, false);
@@ -566,8 +583,10 @@ if (els.kitchenClearHistoryBtn) {
         }
         if (confirm(`Deseja limpar os ${entreguesList.length} pedidos entregues? Os pedidos na fila e prontos permanecerão salvos.`)) {
             const clearedAt = Date.now();
+            const clearedMarkers = Object.fromEntries(entreguesList.map(order => [order.id, clearedAt]));
+            applyDeletedOrderMarkers(clearedMarkers);
             applyHistoryClear(clearedAt);
-            publishUpdate({ type: 'CLEAR_HISTORY', clearedAt }, false);
+            publishUpdate({ type: 'CLEAR_HISTORY', clearedAt, deletedOrderIds: clearedMarkers }, false);
             renderAll();
         }
     };
@@ -583,26 +602,25 @@ if (els.resetPasswordsBtn) {
 }
 
 function updateKitchenCounters() {
-    const counts = { pratosFila: 0, pratosPreparo: 0, pratosPronto: 0, caldosFila: 0, caldosPreparo: 0, caldosPronto: 0 };
+    const counts = { pratosFila: 0, pratosPreparo: 0, pratosPronto: 0 };
+    let countPedidosAtivos = 0;
     let countEntregues = 0;
     let countChapeiro = 0;
 
     Object.values(globalOrders).forEach(pedido => {
         const items = pedido.items || [];
-        if (items.some(i => isChapaItem(i) && (i.status || 'fila') === 'fila')) counts.pratosFila++;
-        if (items.some(i => isChapaItem(i) && i.status === 'em_preparo')) counts.pratosPreparo++;
-        if (items.some(i => isChapaItem(i) && i.status === 'pronto')) counts.pratosPronto++;
-        if (items.some(i => isCaldoItem(i) && (i.status || 'fila') === 'fila')) counts.caldosFila++;
-        if (items.some(i => isCaldoItem(i) && i.status === 'em_preparo')) counts.caldosPreparo++;
-        if (items.some(i => isCaldoItem(i) && i.status === 'pronto')) counts.caldosPronto++;
+        const hasOperationalItem = items.some(item => ['fila', 'em_preparo', 'pronto'].includes(item.status || 'fila'));
+        if (hasOperationalItem) countPedidosAtivos++;
+        if (items.some(i => (i.status || 'fila') === 'fila')) counts.pratosFila++;
+        if (items.some(i => i.status === 'em_preparo')) counts.pratosPreparo++;
+        if (items.some(i => i.status === 'pronto')) counts.pratosPronto++;
         const isEntregue = pedido.items.every(i => i.status === 'entregue') || pedido.deliveredAt;
         if (isEntregue) countEntregues++;
         if (items.some(i => ['fila', 'em_preparo'].includes(i.status || 'fila') && isChapaItem(i))) countChapeiro++;
     });
 
     Object.entries(counts).forEach(([key, value]) => { if (els[`count${key[0].toUpperCase()}${key.slice(1)}`]) els[`count${key[0].toUpperCase()}${key.slice(1)}`].textContent = value; });
-    if (els.countPratosTotal) els.countPratosTotal.textContent = counts.pratosFila + counts.pratosPreparo + counts.pratosPronto;
-    if (els.countCaldosTotal) els.countCaldosTotal.textContent = counts.caldosFila + counts.caldosPreparo + counts.caldosPronto;
+    if (els.countPratosTotal) els.countPratosTotal.textContent = countPedidosAtivos;
     if (els.countEntregues) els.countEntregues.textContent = countEntregues;
     if (els.countChapeiro) els.countChapeiro.textContent = countChapeiro;
     if (els.kitchenTotalEntreguesVal) els.kitchenTotalEntreguesVal.textContent = countEntregues;
@@ -761,7 +779,7 @@ function isCaldoItem(item) {
 function renderQueueMetrics() {
     if (!els.queueMetrics) return;
     if (currentTab === 'entregues') { els.queueMetrics.innerHTML = ''; return; }
-    const lane = currentTab === 'pratos' || currentTab.startsWith('pratos-') || currentTab === 'chapeiro' ? 'pratos' : currentTab === 'caldos' || currentTab.startsWith('caldos-') ? 'caldos' : null;
+    const lane = currentTab === 'pratos' || currentTab.startsWith('pratos-') ? 'todos' : currentTab === 'chapeiro' ? 'pratos' : null;
     const stage = currentTab.endsWith('-preparo') ? 'em_preparo' : currentTab.endsWith('-pronto') ? 'pronto' : null;
     const totals = new Map();
     const chapeiroTotals = { carne: 0, picanha: 0 };
@@ -775,7 +793,6 @@ function renderQueueMetrics() {
             if (currentTab === 'chapeiro' ? !['fila', 'em_preparo'].includes(itemStatus) : stage && itemStatus !== stage) return;
             if (!stage && currentTab !== 'chapeiro' && !['fila', 'em_preparo', 'pronto'].includes(itemStatus)) return;
             if (lane === 'pratos' && !isChapaItem(item)) return;
-            if (lane === 'caldos' && !isCaldoItem(item)) return;
             orderHasPending = true;
             pendingUnits += Number(item.qty) || 1;
             const queuedAt = getOrderQueueTime(order);
@@ -923,7 +940,6 @@ function renderAll() {
     renderQueueMetrics();
 
     const containers = [els.pratosFilaContainer, els.pratosPreparoContainer, els.pratosProntoContainer,
-        els.caldosFilaContainer, els.caldosPreparoContainer, els.caldosProntoContainer,
         els.entreguesContainer, els.chapeiroContainer];
     containers.forEach(container => { if (container) container.innerHTML = ''; });
 
@@ -942,22 +958,15 @@ function renderAll() {
         }
 
         const pratosFila = [], pratosPreparo = [], pratosPronto = [];
-        const caldosFila = [], caldosPreparo = [], caldosPronto = [];
         const entregueItems = [];
         const chapaItems = [];
-
         pedido.items.forEach(item => {
             const st = item.status || 'fila';
+            if (st === 'fila') pratosFila.push(item);
+            if (st === 'em_preparo') pratosPreparo.push(item);
+            if (st === 'pronto') pratosPronto.push(item);
             if (isChapaItem(item)) {
-                if (st === 'fila') pratosFila.push(item);
-                if (st === 'em_preparo') pratosPreparo.push(item);
-                if (st === 'pronto') pratosPronto.push(item);
                 if (['fila', 'em_preparo'].includes(st)) chapaItems.push(item);
-            }
-            if (isCaldoItem(item)) {
-                if (st === 'fila') caldosFila.push(item);
-                if (st === 'em_preparo') caldosPreparo.push(item);
-                if (st === 'pronto') caldosPronto.push(item);
             }
             if (st === 'entregue') entregueItems.push(item);
         });
@@ -965,16 +974,12 @@ function renderAll() {
         if (pratosFila.length) renderCard(pedido, pratosFila, 'pratos-fila', els.pratosFilaContainer);
         if (pratosPreparo.length) renderCard(pedido, pratosPreparo, 'pratos-preparo', els.pratosPreparoContainer);
         if (pratosPronto.length) renderCard(pedido, pratosPronto, 'pratos-pronto', els.pratosProntoContainer);
-        if (caldosFila.length) renderCard(pedido, caldosFila, 'caldos-fila', els.caldosFilaContainer);
-        if (caldosPreparo.length) renderCard(pedido, caldosPreparo, 'caldos-preparo', els.caldosPreparoContainer);
-        if (caldosPronto.length) renderCard(pedido, caldosPronto, 'caldos-pronto', els.caldosProntoContainer);
         if (entregueItems.length > 0 || pedido.deliveredAt) renderCard(pedido, entregueItems.length > 0 ? entregueItems : pedido.items, 'entregues', els.entreguesContainer);
         if (chapaItems.length > 0) renderCard(pedido, chapaItems, 'chapeiro', els.chapeiroContainer);
     });
 
     const visibleContainers = currentTab === 'pratos'
         ? [els.pratosFilaContainer, els.pratosPreparoContainer, els.pratosProntoContainer]
-        : currentTab === 'caldos' ? [els.caldosFilaContainer, els.caldosPreparoContainer, els.caldosProntoContainer]
         : currentTab === 'chapeiro' ? [els.chapeiroContainer] : [els.entreguesContainer];
     els.emptyState.classList.toggle('hidden', visibleContainers.some(container => container && container.children.length > 0));
 }
@@ -983,6 +988,53 @@ function escapeKitchenHtml(value) {
     return String(value ?? '').replace(/[&<>'"]/g, character => ({
         '&': '&amp;', '<': '&lt;', '>': '&gt;', "'": '&#39;', '"': '&quot;'
     })[character]);
+}
+
+function applyItemStatusMetadata(item, status, changedAt = Date.now()) {
+    item.status = status;
+    if (status === 'fila') {
+        delete item.preparationStartedAt;
+        delete item.readyAt;
+        delete item.deliveredAt;
+    } else if (status === 'em_preparo') {
+        item.preparationStartedAt ||= changedAt;
+        delete item.readyAt;
+        delete item.deliveredAt;
+    } else if (status === 'pronto') {
+        item.preparationStartedAt ||= changedAt;
+        item.readyAt = changedAt;
+        delete item.deliveredAt;
+    } else if (status === 'entregue') {
+        item.readyAt ||= changedAt;
+        item.deliveredAt = changedAt;
+    }
+}
+
+function refreshOrderDeliveryMarker(order, changedAt = Date.now()) {
+    const fullyDelivered = (order.items || []).length > 0 && order.items.every(item => item.status === 'entregue');
+    if (fullyDelivered) order.deliveredAt ||= changedAt;
+    else delete order.deliveredAt;
+}
+
+function setOrderStatusOverride(order, item, status, changedAt) {
+    if (!item.id) return;
+    order.statusOverrides ||= {};
+    order.statusOverrides[item.id] = { status, updatedAt: changedAt };
+}
+
+function updateOrderItemsStatus(order, items, status) {
+    const changedAt = Date.now();
+    items.forEach(item => {
+        applyItemStatusMetadata(item, status, changedAt);
+        setOrderStatusOverride(order, item, status, changedAt);
+    });
+    refreshOrderDeliveryMarker(order, changedAt);
+    order.updatedAt = changedAt;
+    globalOrders[order.id] = order;
+    saveStoredOrders();
+    reconcileDeliveredBeverages();
+    publishUpdate({ type: 'ORDER_UPDATE', order }, false);
+    renderAll();
 }
 
 function openEditOrder(pedido) {
@@ -1001,6 +1053,12 @@ function openEditOrder(pedido) {
                 <option value="local" ${item.consumption !== 'levar' ? 'selected' : ''}>Comer no local</option>
                 <option value="levar" ${item.consumption === 'levar' ? 'selected' : ''}>Para levar</option>
             </select></label>
+            <label>Estado<select class="edit-item-status">
+                <option value="fila" ${(item.status || 'fila') === 'fila' ? 'selected' : ''}>Na fila</option>
+                <option value="em_preparo" ${item.status === 'em_preparo' ? 'selected' : ''}>Em preparo</option>
+                <option value="pronto" ${item.status === 'pronto' ? 'selected' : ''}>Pronto</option>
+                <option value="entregue" ${item.status === 'entregue' ? 'selected' : ''}>Entregue</option>
+            </select></label>
             <label class="edit-order-remove"><input class="edit-item-remove" type="checkbox"> Excluir</label>
         </div>
     `).join('');
@@ -1013,18 +1071,7 @@ function closeEditOrder() {
 }
 
 function markOrderDelivered(pedido) {
-    const now = Date.now();
-    (pedido.items || []).forEach(item => {
-        item.status = 'entregue';
-        item.deliveredAt = now;
-    });
-    pedido.deliveredAt = now;
-    pedido.updatedAt = now;
-    globalOrders[pedido.id] = pedido;
-    saveStoredOrders();
-    reconcileDeliveredBeverages();
-    publishUpdate({ type: 'ORDER_UPDATE', order: pedido }, false);
-    renderAll();
+    updateOrderItemsStatus(pedido, pedido.items || [], 'entregue');
 }
 
 if (els.closeEditOrderBtn) els.closeEditOrderBtn.onclick = closeEditOrder;
@@ -1052,6 +1099,7 @@ if (els.saveEditOrderBtn) {
         const rows = [...els.editOrderItems.querySelectorAll('.edit-order-item')];
         const removedIds = new Set(pedido.removedItemIds || []);
         const updatedItems = [];
+        const itemChangedAt = Date.now();
         rows.forEach((row, index) => {
             const item = pedido.items[index];
             if (!item) return;
@@ -1061,6 +1109,9 @@ if (els.saveEditOrderBtn) {
             }
             item.qty = Math.max(1, Number(row.querySelector('.edit-item-qty').value) || 1);
             item.consumption = row.querySelector('.edit-item-consumption').value;
+            const itemStatus = row.querySelector('.edit-item-status').value;
+            applyItemStatusMetadata(item, itemStatus, itemChangedAt);
+            setOrderStatusOverride(pedido, item, itemStatus, itemChangedAt);
             updatedItems.push(item);
         });
         if (updatedItems.length === 0) {
@@ -1073,17 +1124,15 @@ if (els.saveEditOrderBtn) {
         const requestedStatus = els.editOrderStatus.value;
         if (requestedStatus !== 'preservar') {
             const statusChangedAt = Date.now();
-            pedido.items.forEach(item => {
-                item.status = requestedStatus;
-                if (requestedStatus === 'entregue') item.deliveredAt = statusChangedAt;
-                else delete item.deliveredAt;
+            updatedItems.forEach(item => {
+                applyItemStatusMetadata(item, requestedStatus, statusChangedAt);
+                setOrderStatusOverride(pedido, item, requestedStatus, statusChangedAt);
                 if (requestedStatus === 'fila' && !item.queuedAt) item.queuedAt = getOrderQueueTime(pedido);
             });
-            if (requestedStatus === 'entregue') pedido.deliveredAt = statusChangedAt;
-            else delete pedido.deliveredAt;
         }
         pedido.obs = els.editOrderObs.value.trim();
         pedido.items = updatedItems;
+        refreshOrderDeliveryMarker(pedido);
         pedido.removedItemIds = [...removedIds];
         pedido.updatedAt = Date.now();
         globalOrders[pedido.id] = pedido;
@@ -1098,6 +1147,10 @@ if (els.saveEditOrderBtn) {
 function renderCard(pedido, itemsArr, tabType, containerTarget) {
     const card = document.createElement('div');
     card.className = `order-card ${tabType.endsWith('-fila') ? 'novinho' : ''}`;
+    const isOperational = tabType.startsWith('pratos-') || tabType === 'chapeiro';
+    const isQueue = tabType.endsWith('-fila');
+    const isPrep = tabType.endsWith('-preparo');
+    const isReady = tabType.endsWith('-pronto');
     if (tabType === 'entregues') {
         card.style.borderColor = "#27ae60";
         card.style.opacity = "0.85";
@@ -1105,7 +1158,8 @@ function renderCard(pedido, itemsArr, tabType, containerTarget) {
 
     let itemsHTML = '';
     itemsArr.forEach(item => {
-        itemsHTML += renderKitchenItem(item);
+        item.id ||= `item_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
+        itemsHTML += renderKitchenItem(item, (isQueue || isPrep) && tabType !== 'chapeiro');
     });
 
     const obsHTML = pedido.obs && pedido.obs.trim() !== ''
@@ -1122,10 +1176,6 @@ function renderCard(pedido, itemsArr, tabType, containerTarget) {
         ? `<span class="kitchen-priority-badge">${priorityLabels[pedido.priority] || 'Prioridade'}</span>` : '';
 
     let timerHTML = '';
-    const isOperational = tabType.startsWith('pratos-') || tabType.startsWith('caldos-') || tabType === 'chapeiro';
-    const isQueue = tabType.endsWith('-fila');
-    const isPrep = tabType.endsWith('-preparo');
-    const isReady = tabType.endsWith('-pronto');
     const queuePosition = isQueue ? getOrderQueuePosition(pedido) : null;
     const queuePositionHTML = queuePosition
         ? `<span class="queue-position-badge" title="Posição operacional considerando prioridade e horário">Fila: ${queuePosition}º</span>`
@@ -1178,9 +1228,9 @@ function renderCard(pedido, itemsArr, tabType, containerTarget) {
         </div>
         ${tabType === 'chapeiro' ? `<div class="chapeiro-readonly-hint">👁️ Visualização operacional — a finalização é feita no painel da cozinha.</div>` : ''}
         ${isQueue ? `<div class="order-footer"><div class="order-footer-actions five-actions"><button class="edit-order-btn icon-action-btn" title="Editar pedido" aria-label="Editar pedido">✏️</button><button class="start-prep-btn icon-action-btn" title="Iniciar preparo" aria-label="Iniciar preparo">▶️</button><button class="mark-ready-btn icon-action-btn" title="Marcar como pronto" aria-label="Marcar como pronto">✅</button><button class="deliver-lane-btn icon-action-btn" title="Entregar pedido" aria-label="Entregar pedido">📦</button><button class="delete-kitchen-order-btn icon-action-btn" title="Excluir pedido definitivamente" aria-label="Excluir pedido definitivamente">🗑️</button></div></div>` : ''}
-        ${isPrep ? `<div class="order-footer"><div class="order-footer-actions four-actions"><button class="edit-order-btn icon-action-btn" title="Editar pedido" aria-label="Editar pedido">✏️</button><button class="mark-ready-btn icon-action-btn" title="Marcar como pronto" aria-label="Marcar como pronto">✅</button><button class="deliver-lane-btn icon-action-btn" title="Entregar pedido" aria-label="Entregar pedido">📦</button><button class="delete-kitchen-order-btn icon-action-btn" title="Excluir pedido definitivamente" aria-label="Excluir pedido definitivamente">🗑️</button></div></div>` : ''}
-        ${isReady ? `<div class="order-footer"><div class="order-footer-actions three-actions"><button class="edit-order-btn icon-action-btn" title="Editar pedido" aria-label="Editar pedido">✏️</button><button class="deliver-lane-btn icon-action-btn" title="Confirmar entrega" aria-label="Confirmar entrega">📦</button><button class="delete-kitchen-order-btn icon-action-btn" title="Excluir pedido definitivamente" aria-label="Excluir pedido definitivamente">🗑️</button></div></div>` : ''}
-        ${tabType === 'entregues' ? `<div class="order-footer"><div class="order-footer-actions two-actions"><button class="edit-order-btn icon-action-btn" title="Editar pedido" aria-label="Editar pedido">✏️</button><button class="delete-kitchen-order-btn icon-action-btn" title="Excluir pedido definitivamente" aria-label="Excluir pedido definitivamente">🗑️</button></div></div>` : ''}
+        ${isPrep ? `<div class="order-footer"><div class="order-footer-actions five-actions"><button class="edit-order-btn icon-action-btn" title="Editar pedido" aria-label="Editar pedido">✏️</button><button class="regress-status-btn icon-action-btn" title="Voltar pedido para a fila" aria-label="Voltar pedido para a fila">↩️</button><button class="mark-ready-btn icon-action-btn" title="Marcar como pronto" aria-label="Marcar como pronto">✅</button><button class="deliver-lane-btn icon-action-btn" title="Entregar pedido" aria-label="Entregar pedido">📦</button><button class="delete-kitchen-order-btn icon-action-btn" title="Excluir pedido definitivamente" aria-label="Excluir pedido definitivamente">🗑️</button></div></div>` : ''}
+        ${isReady ? `<div class="order-footer"><div class="order-footer-actions four-actions"><button class="edit-order-btn icon-action-btn" title="Editar pedido" aria-label="Editar pedido">✏️</button><button class="regress-status-btn icon-action-btn" title="Voltar pedido para em preparo" aria-label="Voltar pedido para em preparo">↩️</button><button class="deliver-lane-btn icon-action-btn" title="Confirmar entrega" aria-label="Confirmar entrega">📦</button><button class="delete-kitchen-order-btn icon-action-btn" title="Excluir pedido definitivamente" aria-label="Excluir pedido definitivamente">🗑️</button></div></div>` : ''}
+        ${tabType === 'entregues' ? `<div class="order-footer"><div class="order-footer-actions three-actions"><button class="edit-order-btn icon-action-btn" title="Editar pedido" aria-label="Editar pedido">✏️</button><button class="regress-status-btn icon-action-btn" title="Reabrir pedido como pronto" aria-label="Reabrir pedido como pronto">↩️</button><button class="delete-kitchen-order-btn icon-action-btn" title="Excluir pedido definitivamente" aria-label="Excluir pedido definitivamente">🗑️</button></div></div>` : ''}
     `;
 
     const noteInput = card.querySelector('.kitchen-note-input');
@@ -1215,6 +1265,13 @@ function renderCard(pedido, itemsArr, tabType, containerTarget) {
     if (editButton) editButton.onclick = () => openEditOrder(pedido);
     const deleteButton = card.querySelector('.delete-kitchen-order-btn');
     if (deleteButton) deleteButton.onclick = () => deleteOrderPermanently(pedido);
+    card.querySelectorAll('.item-ready-btn').forEach((button, index) => {
+        button.onclick = event => {
+            event.stopPropagation();
+            const item = pedido.items.find(candidate => candidate.id === button.dataset.itemId) || itemsArr[index];
+            if (item) updateOrderItemsStatus(pedido, [item], 'pronto');
+        };
+    });
 
     if (isOperational) {
         const timeWaitEl = card.querySelector(`#time-wait-${pedido.id}-${tabType}`);
@@ -1239,29 +1296,30 @@ function renderCard(pedido, itemsArr, tabType, containerTarget) {
         updateTimers();
         timerInterval = setInterval(updateTimers, 1000);
 
-        const updateItemsStatus = status => {
-            const now = Date.now();
-            itemsArr.forEach(item => { item.status = status; if (status === 'em_preparo') item.preparationStartedAt ||= now; if (status === 'pronto') item.readyAt = now; });
-            pedido.updatedAt = now;
-            globalOrders[pedido.id] = pedido;
-            saveStoredOrders();
-            publishUpdate({ type: 'ORDER_UPDATE', order: pedido }, false);
-            renderAll();
-        };
         const startButton = card.querySelector('.start-prep-btn');
-        if (startButton) startButton.onclick = () => updateItemsStatus('em_preparo');
+        if (startButton) startButton.onclick = () => updateOrderItemsStatus(pedido, itemsArr, 'em_preparo');
         const readyButton = card.querySelector('.mark-ready-btn');
-        if (readyButton) readyButton.onclick = () => updateItemsStatus('pronto');
+        if (readyButton) readyButton.onclick = () => updateOrderItemsStatus(pedido, itemsArr, 'pronto');
+        const regressButton = card.querySelector('.regress-status-btn');
+        if (regressButton && isPrep) regressButton.onclick = () => updateOrderItemsStatus(pedido, itemsArr, 'fila');
+        if (regressButton && isReady) regressButton.onclick = () => updateOrderItemsStatus(pedido, itemsArr, 'em_preparo');
         const deliverButton = card.querySelector('.deliver-lane-btn');
         if (deliverButton) deliverButton.onclick = () => markOrderDelivered(pedido);
+    }
+    if (tabType === 'entregues') {
+        const regressButton = card.querySelector('.regress-status-btn');
+        if (regressButton) regressButton.onclick = () => updateOrderItemsStatus(pedido, pedido.items || [], 'pronto');
     }
 
     containerTarget.append(card);
 }
 
-function renderKitchenItem(item) {
+function renderKitchenItem(item, allowReadyAction = false) {
     const name = item.product && item.product.name ? item.product.name : 'Item sem nome';
     const qty = Number(item.qty) || 1;
+    const readyAction = allowReadyAction
+        ? `<button type="button" class="item-ready-btn" data-item-id="${escapeKitchenHtml(item.id)}" title="Marcar somente este item como pronto" aria-label="Marcar ${escapeKitchenHtml(name)} como pronto">✅</button>`
+        : '';
     const consumptionMatch = name.match(/-\s(Comer no Local|Para Levar)$/);
     const consumption = item.consumption === 'levar' ? 'Para Levar' : item.consumption === 'local' ? 'Comer no Local' : consumptionMatch ? consumptionMatch[1] : 'Comer no Local';
 
@@ -1286,6 +1344,30 @@ function renderKitchenItem(item) {
                 ${preparation}
             </span>
             <span class="prep-location ${consumption === 'Para Levar' ? 'to-go' : ''}">${consumption === 'Para Levar' ? '🛍️ PARA LEVAR' : '🍽️ COMER NO LOCAL'}</span>
+            ${readyAction}
+        </li>`;
+    }
+
+    if (name.startsWith('Panqueca de ')) {
+        const panquecaMatch = name.match(/^Panqueca de (Carne|Frango) \+ (.+?) \[(?:TIRAR:\s*([^\]]+)|COMPLETO)\]\s+-/);
+        const flavor = panquecaMatch ? panquecaMatch[1] : 'Não informado';
+        const rice = panquecaMatch ? panquecaMatch[2] : 'Não informado';
+        const removed = panquecaMatch && panquecaMatch[3]
+            ? panquecaMatch[3].split(',').map(value => value.trim())
+            : [];
+        const preparation = removed.length
+            ? `<span class="prep-block prep-remove"><b>Retirar</b><span>${removed.join(' • ')}</span></span>
+               <span class="prep-block"><b>Prato montado</b><span>Panqueca de ${flavor}</span></span>`
+            : `<span class="prep-block prep-complete"><b>Completo</b></span>`;
+
+        return `<li class="configured-item">
+            <span class="item-qty">${qty}x</span>
+            <span class="item-name">Panqueca de ${flavor}
+                <span class="prep-block"><b>Arroz</b><span>${rice}</span></span>
+                ${preparation}
+            </span>
+            <span class="prep-location ${consumption === 'Para Levar' ? 'to-go' : ''}">${consumption === 'Para Levar' ? '🛍️ PARA LEVAR' : '🍽️ COMER NO LOCAL'}</span>
+            ${readyAction}
         </li>`;
     }
 
@@ -1301,10 +1383,11 @@ function renderKitchenItem(item) {
                 <span class="prep-block"><b>Acompanhamentos</b><span>${accompaniment === 'Sem Acomp.' ? 'Sem acompanhamento' : accompaniment}</span></span>
             </span>
             <span class="prep-location ${consumption === 'Para Levar' ? 'to-go' : ''}">${consumption === 'Para Levar' ? '🛍️ PARA LEVAR' : '🍽️ COMER NO LOCAL'}</span>
+            ${readyAction}
         </li>`;
     }
 
-    return `<li><span class="item-qty">${qty}x</span><span class="item-name">${name}</span></li>`;
+    return `<li><span class="item-qty">${qty}x</span><span class="item-name">${name}</span>${readyAction}</li>`;
 }
 
 // Inicializa Aba Padrão Fila
@@ -1317,8 +1400,9 @@ setInterval(renderQueueMetrics, 30000);
 let wakeLock = null;
 async function keepScreenAlive() {
     try {
-        if ('wakeLock' in navigator) {
+        if ('wakeLock' in navigator && (!wakeLock || wakeLock.released)) {
             wakeLock = await navigator.wakeLock.request('screen');
+            wakeLock.addEventListener('release', () => { wakeLock = null; }, { once: true });
         }
     } catch (err) { }
 }

@@ -379,6 +379,66 @@ h2 {
     transition: 0.2s;
 }
 
+.waiter-order-timers {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 6px;
+    margin-top: 12px;
+}
+
+.waiter-order-timers > div {
+    display: grid;
+    gap: 4px;
+    min-width: 0;
+    padding: 9px 7px;
+    border-radius: 10px;
+    background: #f5f0ed;
+    text-align: center;
+}
+
+.waiter-order-timers span { color: #6e6265; font-size: .68rem; font-weight: 700; line-height: 1.2; }
+.waiter-order-timers strong { color: #74131b; font-size: .92rem; font-variant-numeric: tabular-nums; }
+
+.waiter-status-flow {
+    display: grid;
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+    gap: 4px;
+    margin-top: 12px;
+}
+
+.waiter-status-flow span {
+    padding: 7px 3px;
+    border-radius: 999px;
+    background: #ece8e5;
+    color: #776d70;
+    text-align: center;
+    font-size: .66rem;
+    font-weight: 750;
+    transition: background-color .25s ease, color .25s ease, transform .25s ease;
+}
+
+.waiter-status-flow span.done { background: #d7eddf; color: #1f7044; }
+.waiter-status-flow span.active { background: #74131b; color: #fff; transform: scale(1.03); }
+.waiter-state-message { margin-top: 10px; padding: 10px; border-radius: 10px; font-weight: 750; text-align: center; }
+.waiter-state-message.preparing { background: #e9e1f7; color: #6741a5; }
+.btn-ver-detalhes { width: 100%; min-height: 42px; margin-top: 10px; border: 0; border-radius: 10px; background: #2f86b7; color: #fff; font-weight: 750; cursor: pointer; }
+.waiter-inline-details {
+    display: grid;
+    gap: 8px;
+    margin-top: 8px;
+    padding: 10px;
+    border: 1px solid #ddd3ce;
+    border-radius: 10px;
+    background: #f8f4f1;
+}
+.waiter-inline-details.hidden { display: none; }
+.waiter-inline-detail-item { display: grid; gap: 3px; padding: 8px; border-radius: 8px; background: #fff; }
+.waiter-inline-detail-item strong { color: #3b3033; font-size: .82rem; overflow-wrap: anywhere; }
+.waiter-inline-detail-item small { color: #71676a; font-size: .72rem; }
+.btn-open-detail-modal { min-height: 40px; border: 0; border-radius: 9px; background: #74131b; color: #fff; font-weight: 750; cursor: pointer; }
+.waiter-detail-item { display: grid; gap: 4px; padding: 10px 0; border-bottom: 1px dashed #ddd5d0; }
+.waiter-detail-item small { color: #756b6e; font-size: .76rem; }
+
 .history-summary.hidden {
     display: none !important;
 }
@@ -1317,8 +1377,56 @@ button, a { -webkit-tap-highlight-color: transparent; }
 .menu-categories button.active { background: rgba(116,19,27,.1) !important; color: #74131b !important; }
 .notification-overlay, .cart-modal { background: rgba(38,31,33,.5) !important; backdrop-filter: blur(5px); }
 .notification-modal, .cart-modal-content {
+    position: relative;
     border: 0 !important; border-radius: 20px !important; background: #fff !important;
     box-shadow: 0 24px 60px rgba(38,31,33,.22) !important;
+}
+.dialog-close-x {
+    position: absolute;
+    top: 10px;
+    right: 10px;
+    z-index: 5;
+    display: grid;
+    place-items: center;
+    width: 40px;
+    height: 40px;
+    padding: 0 !important;
+    border: 0;
+    border-radius: 50% !important;
+    background: #f0ebe8;
+    color: #4d4447;
+    font-size: 1.25rem;
+    line-height: 1;
+    cursor: pointer;
+}
+.notification-modal > h2:first-of-type { padding-right: 44px; }
+.cart-modal-header { padding-right: 58px; }
+#options-modal-body select {
+    width: 100%;
+    min-height: 48px;
+    padding: .8rem;
+    margin: .5rem 0 1rem;
+    border: 1px solid #d8cfca;
+    border-radius: 10px;
+    background: #fff;
+    color: #2f292b;
+    font-size: 1rem;
+}
+.option-list-box {
+    margin: .5rem 0 1rem;
+    padding: 1rem;
+    border: 1px solid #ddd3ce;
+    border-radius: 10px;
+    background: #f7f3f1;
+}
+.configured-product-price {
+    margin-top: 1rem;
+    padding: .85rem 1rem;
+    border-radius: 10px;
+    background: #f7e7b2;
+    color: #4d090e;
+    font-weight: 800;
+    text-align: center;
 }
 .cart-bar { background: rgba(77,9,14,.98) !important; backdrop-filter: blur(10px); }
 @media (max-width:720px) {
@@ -1331,6 +1439,8 @@ button, a { -webkit-tap-highlight-color: transparent; }
     .table-grid { grid-template-columns: 1fr; }
     .product-card { padding: 18px !important; }
     .notification-modal, .cart-modal-content { border-radius: 20px 20px 0 0 !important; }
+    .waiter-tabs { display: grid !important; grid-template-columns: repeat(2, minmax(0, 1fr)); }
+    .waiter-order-timers { grid-template-columns: 1fr; }
 }
 
 /* Checkboxes operacionais: dimensão e alinhamento independentes dos campos de texto */

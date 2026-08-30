@@ -444,6 +444,7 @@ body { background: var(--flat-cream); color: var(--text); }
 .edit-order-btn { background: #7652bd !important; }
 .start-prep-btn { background: #2980b9 !important; }
 .mark-ready-btn { background: #259b57 !important; }
+.regress-status-btn { background: #d37a22 !important; }
 .deliver-lane-btn { background: #e6a900 !important; }
 .delete-kitchen-order-btn { background: #d94b4b !important; }
 
@@ -1200,7 +1201,7 @@ input:focus, select:focus, textarea:focus { outline: 3px solid rgba(143,74,82,.1
 
 .edit-order-item {
     display: grid;
-    grid-template-columns: minmax(0, 1fr) 90px 170px auto;
+    grid-template-columns: minmax(0, 1fr) 80px 145px 145px auto;
     gap: 0.6rem;
     align-items: center;
     padding: 0.7rem;
@@ -1465,6 +1466,25 @@ input:focus, select:focus, textarea:focus { outline: 3px solid rgba(143,74,82,.1
     justify-self: center;
     text-align: center;
 }
+.item-ready-btn {
+    flex: 0 0 auto;
+    align-self: center;
+    margin-left: auto;
+    min-width: 42px;
+    min-height: 42px;
+    padding: 0.45rem;
+    border: 0;
+    border-radius: 12px;
+    background: #259b57;
+    color: #fff;
+    font-size: 1.15rem;
+    cursor: pointer;
+}
+.order-card .configured-item > .item-ready-btn {
+    grid-column: 1 / -1;
+    justify-self: end;
+    margin: 0;
+}
 .queue-position-badge {
     display: inline-flex;
     align-items: center;
@@ -1570,8 +1590,29 @@ body { background: #f8f7f5 !important; color: #261f21; }
 .kitchen-board .order-card { background: #252525 !important; color: #fffaf5 !important; }
 .overlay { background: rgba(38,31,33,.5) !important; backdrop-filter: blur(5px); }
 .overlay-modal {
+    position: relative;
     border: 0 !important; border-radius: 20px !important; background: #fff !important;
     box-shadow: 0 24px 60px rgba(38,31,33,.22) !important;
+}
+.dialog-close-x {
+    display: grid !important;
+    place-items: center;
+    width: 40px !important;
+    min-width: 40px !important;
+    height: 40px !important;
+    padding: 0 !important;
+    border: 0 !important;
+    border-radius: 50% !important;
+    background: #f0ebe8 !important;
+    color: #4d4447 !important;
+    font-size: 1.25rem !important;
+    line-height: 1;
+    cursor: pointer;
+}
+#close-audio-overlay-btn {
+    position: absolute;
+    top: 10px;
+    right: 10px;
 }
 .stock-close-btn, .edit-order-save-btn, .stock-save-btn { min-height: 44px; border-radius: 12px !important; }
 .beverage-stock-card { border-radius: 16px !important; box-shadow: 0 4px 20px -4px rgba(38,31,33,.16) !important; }
@@ -1587,6 +1628,15 @@ body { background: #f8f7f5 !important; color: #261f21; }
     .kitchen-board { padding: 16px; }
     .kanban-board { gap: 14px; }
     .kanban-lane { min-width: 82vw; }
+    .queue-metrics {
+        display: grid;
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+        overflow-x: visible;
+    }
+    .queue-metric-card {
+        min-width: 0;
+        gap: 8px;
+    }
 }
 
 /* Movimento e feedback — curto para preservar a velocidade operacional */
@@ -1597,7 +1647,7 @@ button, .module-link, .tab-btn, .icon-action-btn, .queue-metric-card, .order-car
 }
 button:hover, .module-link:hover, .tab-btn:hover { transform: translateY(-1px); }
 button:active, .module-link:active, .tab-btn:active, .icon-action-btn:active { transform: scale(.97); }
-.order-card { animation: orderCardEnter .2s ease both !important; }
+.order-card { animation: none !important; }
 .overlay { opacity: 1; transition: opacity .18s ease, display .18s allow-discrete; }
 .overlay.hidden { opacity: 0; }
 .overlay:not(.hidden) .overlay-modal { animation: modalEnterKitchen .2s cubic-bezier(.2,.8,.2,1) both; }
@@ -1605,7 +1655,6 @@ button:active, .module-link:active, .tab-btn:active, .icon-action-btn:active { t
 .kanban-board[style*="grid"],
 .kitchen-board > .column[style*="flex"] { animation: panelEnter .2s ease both; }
 @starting-style { .overlay:not(.hidden) { opacity: 0; } }
-@keyframes orderCardEnter { from { opacity: 0; transform: translateY(7px); } to { opacity: 1; transform: none; } }
 @keyframes modalEnterKitchen { from { opacity: 0; transform: translateY(10px) scale(.985); } to { opacity: 1; transform: none; } }
 @keyframes analysisEnter { from { opacity: 0; transform: translateY(-5px); } to { opacity: 1; transform: none; } }
 @keyframes panelEnter { from { opacity: 0; transform: translateY(5px); } to { opacity: 1; transform: none; } }

@@ -6,7 +6,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
     <title>Pedidos - Canela de Fogo</title>
     <link rel="icon" type="image/png" href="logo.png">
-    <link rel="stylesheet" href="style.css?v=20260823-18">
+    <link rel="stylesheet" href="style.css?v=20260830-4">
 </head>
 
 <body>
@@ -93,10 +93,13 @@
             </div>
 
             <!-- Abas de Navegação -->
-            <div style="display: flex; gap: 0.4rem; margin-bottom: 0.8rem;">
+            <div class="waiter-tabs" style="display: flex; gap: 0.4rem; margin-bottom: 0.8rem;">
                 <button id="wtab-fila" class="wtab-btn"
                     style="background:var(--primary-color); color:#000; border:none; padding:0.6rem 0.4rem; font-weight:bold; border-radius:6px; flex:1; cursor:pointer; font-size:0.9rem;"
                     onclick="switchWaiterTab('fila')">Na Fila <span id="badge-fila" class="tab-badge">0</span></button>
+                <button id="wtab-preparo" class="wtab-btn"
+                    style="background:#444; color:white; border:none; padding:0.6rem 0.4rem; font-weight:bold; border-radius:6px; flex:1; cursor:pointer; font-size:0.9rem;"
+                    onclick="switchWaiterTab('preparo')">Em preparo <span id="badge-preparo" class="tab-badge">0</span></button>
                 <button id="wtab-pronto" class="wtab-btn"
                     style="background:#444; color:white; border:none; padding:0.6rem 0.4rem; font-weight:bold; border-radius:6px; flex:1; cursor:pointer; font-size:0.9rem;"
                     onclick="switchWaiterTab('pronto')">Prontos <span id="badge-pronto" class="tab-badge">0</span></button>
@@ -153,6 +156,7 @@
     <!-- Modal das Opções de Prato -->
     <div id="options-modal" class="notification-overlay hidden">
         <div class="notification-modal" style="border-color: var(--primary-color); max-width: 500px; width: 95%; max-height: 90vh; overflow-y: auto;">
+            <button type="button" id="close-options-modal-x" class="dialog-close-x" aria-label="Fechar opções">✕</button>
             <h2 id="modal-options-title" style="color: var(--primary-bg); font-size: 1.4rem;">Opções</h2>
             <div id="options-modal-body" style="margin-bottom: 1.5rem; text-align: left; font-size: 1.1rem;">
                 <!-- Dinâmico JS -->
@@ -167,6 +171,7 @@
     <!-- Modal Novo Pedido -->
     <div id="new-order-modal" class="notification-overlay hidden">
         <div class="notification-modal" style="border-color: var(--primary-color); max-width: 450px; width: 95%;">
+            <button type="button" id="close-new-order-modal-x" class="dialog-close-x" aria-label="Fechar novo pedido">✕</button>
             <h2 style="color: var(--primary-bg); font-size: 1.5rem;">Novo Pedido</h2>
             <div style="margin-bottom: 1.2rem; text-align: left; font-size: 1.05rem;">
                 
@@ -199,6 +204,7 @@
     <!-- Modal exclusivo para iniciar Pedido Rápido -->
     <div class="notification-overlay hidden" id="quick-order-modal">
         <div class="notification-modal quick-order-create-modal">
+            <button type="button" id="close-quick-order-modal-x" class="dialog-close-x" aria-label="Fechar pedido rápido">✕</button>
             <h2>⚡ Criar Pedido Rápido</h2>
             <p>Use este modo para bebidas e itens que não precisam passar pela cozinha.</p>
             <p class="quick-order-warning">O pedido será finalizado diretamente e não aparecerá no painel da cozinha.</p>
@@ -212,7 +218,7 @@
         <div class="cart-modal-content">
             <div class="cart-modal-header">
                 <h2>Pedido - <span id="cart-modal-table">Cliente</span></h2>
-                <button class="close-btn" id="close-cart">✕</button>
+                <button type="button" class="close-btn dialog-close-x" id="close-cart" aria-label="Fechar pedido">✕</button>
             </div>
             <div class="cart-items-list" id="cart-items-container">
                 <!-- Populate via JS -->
@@ -239,7 +245,7 @@
         <div class="notification-modal" style="border-color: #3498db; max-width: 500px; width: 95%; text-align: left; max-height: 85vh; overflow-y: auto;">
             <div style="display: flex; justify-content: space-between; align-items: center; border-bottom: 2px solid #eee; padding-bottom: 0.5rem; margin-bottom: 1rem;">
                 <h2 id="detail-modal-title" style="color: var(--primary-bg); margin: 0; font-size: 1.3rem;">Detalhes do Pedido</h2>
-                <button id="close-detail-modal" style="background: none; border: none; font-size: 1.5rem; cursor: pointer; color: #888;">✕</button>
+                <button type="button" id="close-detail-modal" class="dialog-close-x" aria-label="Fechar detalhes">✕</button>
             </div>
             <div id="detail-modal-body" style="font-size: 1rem; color: #333; line-height: 1.5;">
                 <!-- Dinâmico JS -->
@@ -255,6 +261,7 @@
     <!-- Modal de Notificação Fixa / Alarme Contínuo do Garçom -->
     <div id="waiter-notif-overlay" class="notification-overlay hidden">
         <div class="notification-modal pulse-ring" style="border-color: #e74c3c; border-width: 4px; max-width: 420px; width: 95%;">
+            <button type="button" id="close-waiter-notif-x" class="dialog-close-x" aria-label="Fechar aviso">✕</button>
             <div style="font-size: 3.5rem; animation: bounce 0.8s infinite alternate;">🛎️</div>
             <h2 style="color: #e74c3c; font-size: 1.7rem; margin-bottom: 0.5rem;">CHAMAR CLIENTE!</h2>
             <p id="waiter-notif-msg" class="notification-msg" style="color: #222; font-size: 1.25rem;">O pedido está pronto no balcão!</p>
@@ -267,8 +274,8 @@
 
     <!-- Biblioteca MQTT para rede em tempo real -->
     <script src="assets/js/mqtt-4.3.7.min.js?v=20260823-1"></script>
-    <script src="persistence.js?v=20260823-2"></script>
-    <script src="app.js?v=20260823-10"></script>
+    <script src="persistence.js?v=20260830-4"></script>
+    <script src="app.js?v=20260830-4"></script>
 </body>
 
 </html>

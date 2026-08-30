@@ -21,7 +21,8 @@ const DB = {
 
         { id: 15, name: "Água Mineral", desc: "", price: 5.00, category: "Outras Bebidas" },
         { id: 16, name: "Redbull", desc: "Lata", price: 12.00, category: "Outras Bebidas" },
-        { id: 17, name: "Monster", desc: "Lata", price: 12.00, category: "Outras Bebidas" }
+        { id: 17, name: "Monster", desc: "Lata", price: 12.00, category: "Outras Bebidas" },
+        { id: 18, name: "Panqueca", desc: "Montar Panqueca", price: 25.00, dynamic: "panqueca", category: "Pratos" }
     ]
 };
 
@@ -317,13 +318,17 @@ function initMQTT() {
                 if (data.type === 'SYNC_ALL_ORDERS' && Array.isArray(data.orders)) {
                     applyDeletedOrderMarkers(data.deletedOrderIds);
                     if (data.historyClearedAt) applyHistoryClear(data.historyClearedAt);
-                    data.orders.forEach(order => processIncomingOrder(order, false));
-                    saveStoredOrders();
-                    renderActiveOrders();
+                    let changed = false;
+                    data.orders.forEach(order => { if (processIncomingOrder(order, false)) changed = true; });
+                    if (changed) {
+                        saveStoredOrders();
+                        renderActiveOrders();
+                    }
                     return;
                 }
 
                 if (data.type === 'CLEAR_HISTORY') {
+                    applyDeletedOrderMarkers(data.deletedOrderIds);
                     applyHistoryClear(data.clearedAt);
                     renderActiveOrders();
                     return;
@@ -361,9 +366,10 @@ function initMQTT() {
 
                 const orderData = data.order || data;
                 if (orderData && (orderData.id || orderData.senha)) {
-                    processIncomingOrder(orderData, true);
-                    saveStoredOrders();
-                    renderActiveOrders();
+                    if (processIncomingOrder(orderData, true)) {
+                        saveStoredOrders();
+                        renderActiveOrders();
+                    }
                 }
 
             } catch (e) {
@@ -417,10 +423,11 @@ function processIncomingOrder(orderData, notifyIfReady) {
     if (!orderData.id) {
         orderData.id = `ord_${orderData.senha}_${orderData.timestamp || Date.now()}`;
     }
-    if (deletedOrderIds[orderData.id]) return;
+    if (deletedOrderIds[orderData.id]) return false;
     if (shouldSuppressDeliveredOrder(orderData)) {
+        const existed = Boolean(globalActiveOrders[orderData.id]);
         delete globalActiveOrders[orderData.id];
-        return;
+        return existed;
     }
 
     const incSenha = parseInt(orderData.senha, 10);
@@ -431,6 +438,8 @@ function processIncomingOrder(orderData, notifyIfReady) {
 
     const existing = globalActiveOrders[orderData.id];
     orderData = window.mergeCanelaOrders ? mergeCanelaOrders(existing, orderData) : orderData;
+    const hasChanged = !existing || JSON.stringify(existing) !== JSON.stringify(orderData);
+    if (!hasChanged) return false;
     let hasNewPronto = false;
 
     if (existing && notifyIfReady) {
@@ -454,6 +463,7 @@ function processIncomingOrder(orderData, notifyIfReady) {
     if (hasNewPronto && notifyIfReady) {
         startContinuousAlarm(`📣 Chame ${orderData.clientName}! Senha #${orderData.senha}. O pedido está pronto.`);
     }
+    return true;
 }
 
 // --- RECONEXÃO E RESSINCRONIZAÇÃO AUTOMÁTICA AO RETORNAR PARA O APP ---
@@ -483,6 +493,7 @@ window.addEventListener('offline', () => setConnectionStatus(false));
 setInterval(() => {
     if (!navigator.onLine && mqttIsOnline) setConnectionStatus(false);
 }, 1000);
+setInterval(updateWaiterTimers, 1000);
 setInterval(() => {
     if (mqttClient && mqttClient.connected) flushWaiterOutbox();
 }, 3000);
@@ -527,6 +538,7 @@ const els = {
     orderSearchInput: document.getElementById('order-search-input'),
 
     badgeFila: document.getElementById('badge-fila'),
+    badgePreparo: document.getElementById('badge-preparo'),
     badgePronto: document.getElementById('badge-pronto'),
     badgeEntregue: document.getElementById('badge-entregue'),
 
@@ -657,6 +669,7 @@ window.switchWaiterTab = function (tab) {
 function updateTabBadges() {
     const filterVal = els.waiterFilter ? els.waiterFilter.value : 'meus';
     let countFila = 0;
+    let countPreparo = 0;
     let countPronto = 0;
     let countEntregue = 0;
 
@@ -664,15 +677,18 @@ function updateTabBadges() {
         if (filterVal === 'meus' && order.waiterName && order.waiterName.toLowerCase() !== waiterName.toLowerCase()) return;
 
         const hasFila = order.items.some(i => (i.status || 'fila') === 'fila');
+        const hasPreparo = order.items.some(i => i.status === 'em_preparo');
         const hasPronto = order.items.some(i => i.status === 'pronto');
         const isEntregue = order.items.every(i => i.status === 'entregue') || order.deliveredAt;
 
         if (hasFila) countFila++;
+        if (hasPreparo) countPreparo++;
         if (hasPronto) countPronto++;
         if (isEntregue) countEntregue++;
     });
 
     if (els.badgeFila) els.badgeFila.textContent = countFila;
+    if (els.badgePreparo) els.badgePreparo.textContent = countPreparo;
     if (els.badgePronto) els.badgePronto.textContent = countPronto;
     if (els.badgeEntregue) els.badgeEntregue.textContent = countEntregue;
 
@@ -700,6 +716,77 @@ function getWaiterQueuePosition(targetOrder) {
         .sort((a, b) => getWaiterPriorityRank(b) - getWaiterPriorityRank(a) || getWaiterQueueStart(a) - getWaiterQueueStart(b));
     const index = queue.findIndex(order => order.id === targetOrder.id);
     return index >= 0 ? index + 1 : null;
+}
+
+function formatWaiterClock(milliseconds, countdown = false) {
+    const totalSeconds = Math.max(0, Math.floor(Math.abs(milliseconds) / 1000));
+    const hours = Math.floor(totalSeconds / 3600);
+    const minutes = Math.floor((totalSeconds % 3600) / 60);
+    const seconds = totalSeconds % 60;
+    const clock = `${hours ? `${String(hours).padStart(2, '0')}:` : ''}${String(minutes).padStart(2, '0')}:${String(seconds).padStart(2, '0')}`;
+    return countdown && milliseconds < 0 ? `Atrasado ${clock}` : clock;
+}
+
+function getWaiterEstimateMinutes(order) {
+    const stored = Number(order.estimatedPrepMinutesAtEntry || 0);
+    if (stored > 0) return stored;
+    const start = getWaiterQueueStart(order);
+    const deadline = Number(order.estimatedReadyAt || 0);
+    if (deadline > start) return Math.max(1, Math.round((deadline - start) / 60000));
+    const pendingItems = (order.items || []).filter(item => ['fila', 'em_preparo'].includes(item.status || 'fila'));
+    const hasPlate = pendingItems.some(item => /Carne de Sol na Chapa|Picanha na Chapa/.test(item.product && item.product.name || ''));
+    const hasBroth = pendingItems.some(item => (item.product && item.product.name || '').startsWith('Caldo '));
+    let plateEstimate = Math.max(0, ...pendingItems.map(item => {
+        const name = item.product && item.product.name || '';
+        if (name.includes('Picanha na Chapa')) return 12;
+        if (name.includes('Carne de Sol na Chapa')) return 10;
+        return 0;
+    }));
+    let brothEstimate = hasBroth ? 8 : 0;
+    const queue = Object.values(globalActiveOrders)
+        .filter(candidate => (candidate.items || []).some(item => ['fila', 'em_preparo'].includes(item.status || 'fila')))
+        .sort((a, b) => getWaiterPriorityRank(b) - getWaiterPriorityRank(a) || getWaiterQueueStart(a) - getWaiterQueueStart(b));
+    const targetIndex = queue.findIndex(candidate => candidate.id === order.id);
+    queue.slice(0, Math.max(0, targetIndex)).forEach(candidate => (candidate.items || []).forEach(item => {
+        if (!['fila', 'em_preparo'].includes(item.status || 'fila')) return;
+        const name = item.product && item.product.name || '';
+        const qty = Math.max(1, Number(item.qty) || 1);
+        if (hasPlate && name.includes('Picanha na Chapa')) plateEstimate += qty * 6;
+        else if (hasPlate && name.includes('Carne de Sol na Chapa')) plateEstimate += qty * 4;
+        if (hasBroth && name.startsWith('Caldo ')) brothEstimate += qty * 3;
+    }));
+    return Math.max(plateEstimate, brothEstimate, 1);
+}
+
+function renderWaiterTimers(order) {
+    const start = getWaiterQueueStart(order);
+    const estimateMinutes = getWaiterEstimateMinutes(order);
+    const deadline = Number(order.estimatedReadyAt || 0) || start + estimateMinutes * 60000;
+    return `<div class="waiter-order-timers" data-start="${start}" data-deadline="${deadline}" data-duration="${estimateMinutes * 60000}">
+        <div><span>⏱️ Espera atual</span><strong class="waiter-elapsed">${formatWaiterClock(Date.now() - start)}</strong></div>
+        <div><span>🎯 Entrega</span><strong class="waiter-countdown">${formatWaiterClock(deadline - Date.now(), true)}</strong></div>
+        <div><span>📌 Previsão</span><strong class="waiter-static">${formatWaiterClock(estimateMinutes * 60000)}</strong></div>
+    </div>`;
+}
+
+function renderWaiterStatusFlow(activeStatus) {
+    const steps = [['fila', 'Fila'], ['em_preparo', 'Em preparo'], ['pronto', 'Pronto'], ['entregue', 'Entregue']];
+    const activeIndex = Math.max(0, steps.findIndex(([status]) => status === activeStatus));
+    return `<div class="waiter-status-flow">${steps.map(([status, label], index) => `<span class="${index < activeIndex ? 'done' : index === activeIndex ? 'active' : ''}">${label}</span>`).join('')}</div>`;
+}
+
+function updateWaiterTimers() {
+    document.querySelectorAll('.waiter-order-timers').forEach(timer => {
+        const start = Number(timer.dataset.start);
+        const deadline = Number(timer.dataset.deadline);
+        const duration = Number(timer.dataset.duration);
+        const elapsed = timer.querySelector('.waiter-elapsed');
+        const countdown = timer.querySelector('.waiter-countdown');
+        const staticValue = timer.querySelector('.waiter-static');
+        if (elapsed) elapsed.textContent = formatWaiterClock(Date.now() - start);
+        if (countdown) countdown.textContent = formatWaiterClock(deadline - Date.now(), true);
+        if (staticValue) staticValue.textContent = formatWaiterClock(duration);
+    });
 }
 
 function renderActiveOrders() {
@@ -730,6 +817,9 @@ function renderActiveOrders() {
         if (currentWaiterTab === 'fila') {
             validItems = order.items.filter(i => (i.status || 'fila') === 'fila');
             shouldShowInTab = validItems.length > 0;
+        } else if (currentWaiterTab === 'preparo') {
+            validItems = order.items.filter(i => i.status === 'em_preparo');
+            shouldShowInTab = validItems.length > 0;
         } else if (currentWaiterTab === 'pronto') {
             validItems = order.items.filter(i => i.status === 'pronto');
             shouldShowInTab = validItems.length > 0;
@@ -747,14 +837,10 @@ function renderActiveOrders() {
         const horaStr = order.timestamp ? new Date(order.timestamp).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' }) : '--:--';
         const entregueHoraStr = order.deliveredAt ? new Date(order.deliveredAt).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' }) : null;
 
-        const isLevar = order.tipoConsumo === 'levar' || (order.items && order.items.some(i => i.consumption === 'levar' || (i.product && i.product.name && i.product.name.includes('Para Levar'))));
-        const tipoBadgeHTML = isLevar
-            ? `<span class="badge-mini-levar">🛍️ Viagem</span>`
-            : `<span class="badge-mini-local">🍽️ Local</span>`;
         const priorityLabels = { idoso60: '👴 Idoso 60+', idoso80: '⭐ Idoso 80+', gestante: '🤰 Gestante', pcd: '♿ PCD', autista: '♾️ Autista', colo: '👶 Criança de colo' };
         const priorityBadgeHTML = order.priority && order.priority !== 'normal'
             ? `<span class="priority-badge">${priorityLabels[order.priority] || 'Prioridade'}</span>` : '';
-        const queuePosition = currentWaiterTab === 'fila' ? getWaiterQueuePosition(order) : null;
+        const queuePosition = ['fila', 'preparo'].includes(currentWaiterTab) ? getWaiterQueuePosition(order) : null;
         const queuePositionHTML = queuePosition
             ? `<span class="waiter-queue-position">Fila: ${queuePosition}º</span>`
             : '';
@@ -763,7 +849,6 @@ function renderActiveOrders() {
             <div style="display:flex; justify-content:space-between; align-items:center;">
                 <div style="display:flex; align-items:center; gap:0.4rem;">
                     <span class="senha-tag">#${order.senha}</span>
-                    ${tipoBadgeHTML}
                     ${priorityBadgeHTML}
                     ${queuePositionHTML}
                 </div>
@@ -773,25 +858,46 @@ function renderActiveOrders() {
             ${order.feature ? `<div style="font-size:0.85rem; color:#555; font-style:italic;">📍 ${order.feature}</div>` : ''}
             <div style="font-size:0.8rem; color:#888; margin-top:0.2rem;">Atend: <strong>${order.waiterName || 'Geral'}</strong></div>
         `;
+        const statusByTab = { fila: 'fila', preparo: 'em_preparo', pronto: 'pronto', entregue: 'entregue' };
+        const operationalInfo = currentWaiterTab === 'entregue' ? '' : `${renderWaiterStatusFlow(statusByTab[currentWaiterTab])}${renderWaiterTimers(order)}`;
+        const detailStatusLabels = { fila: 'Na fila', em_preparo: 'Em preparo', pronto: 'Pronto', entregue: 'Entregue' };
+        const detailItemsHTML = order.items.map(item => {
+            const itemName = item.product && item.product.name || 'Item';
+            const showsConsumption = itemName.includes(' na Chapa + ') || itemName.startsWith('Caldo ') || itemName.startsWith('Panqueca de ');
+            const itemConsumption = item.consumption === 'levar' || itemName.includes('Para Levar')
+                ? '🛍️ Para levar' : '🍽️ Comer no local';
+            return `<div class="waiter-inline-detail-item"><strong>${item.qty}x ${itemName}</strong><small>${showsConsumption ? `${itemConsumption} • ` : ''}${detailStatusLabels[item.status || 'fila']}</small></div>`;
+        }).join('');
+        const detailsButtonHTML = `<div class="waiter-inline-details-wrap">
+            <button class="btn-ver-detalhes" type="button" aria-expanded="false">📋 Ver detalhes</button>
+            <div class="waiter-inline-details hidden">${detailItemsHTML}<button class="btn-open-detail-modal" type="button">✏️ Editar ou adicionar itens</button></div>
+        </div>`;
 
         if (currentWaiterTab === 'fila') {
-            div.innerHTML = headerStr + `
+            div.innerHTML = headerStr + operationalInfo + `
                 <div style="margin-top:0.6rem; font-size:0.9rem; background:rgba(0,0,0,0.05); padding:0.4rem; border-radius:5px;">
                     ⏳ <strong>${validItems.length}</strong> item(ns) na fila de preparo
                 </div>
                 <div style="margin-top:0.5rem; font-size:0.85rem; color:var(--primary-bg); font-weight:bold;">
                     Toque para adicionar mais itens ➕
                 </div>
+                ${detailsButtonHTML}
             `;
             div.onclick = () => openExistingOrder(order);
+        } else if (currentWaiterTab === 'preparo') {
+            div.innerHTML = headerStr + operationalInfo + `
+                <div class="waiter-state-message preparing">👨‍🍳 ${validItems.length} item(ns) em preparo</div>
+                ${detailsButtonHTML}
+            `;
         } else if (currentWaiterTab === 'pronto') {
-            div.innerHTML = headerStr + `
+            div.innerHTML = headerStr + operationalInfo + `
                 <div style="margin-top:0.6rem; font-size:0.95rem; color:#27ae60; font-weight:bold; background:#e8f8f5; padding:0.5rem; border-radius:6px; border:1px solid #a3e4d7;">
                     🛎️ ${validItems.length} item(ns) pronto(s)!
                 </div>
                 <button class="btn-entregar-card" style="background:#27ae60; color:white; border:none; padding:0.7rem; border-radius:6px; width:100%; font-weight:bold; margin-top:0.6rem; cursor:pointer; font-size:1rem; box-shadow:0 2px 4px rgba(0,0,0,0.15);">
                     CONFIRMAR ENTREGA ✅
                 </button>
+                ${detailsButtonHTML}
             `;
             div.querySelector('.btn-entregar-card').onclick = (e) => {
                 e.stopPropagation();
@@ -805,12 +911,26 @@ function renderActiveOrders() {
                 <div style="margin-top:0.3rem; font-size:0.85rem; color:#666;">
                     ${order.items.length} item(ns)
                 </div>
-                <button class="btn-ver-detalhes" style="background:#3498db; color:white; border:none; padding:0.5rem; border-radius:6px; width:100%; font-weight:bold; margin-top:0.5rem; cursor:pointer; font-size:0.85rem;">
-                    📄 Ver Detalhes / Reabrir
-                </button>
+                ${detailsButtonHTML}
             `;
-            div.querySelector('.btn-ver-detalhes').onclick = (e) => {
-                e.stopPropagation();
+        }
+
+        const detailsButton = div.querySelector('.btn-ver-detalhes');
+        const inlineDetails = div.querySelector('.waiter-inline-details');
+        if (detailsButton && inlineDetails) {
+            detailsButton.onclick = event => {
+                event.stopPropagation();
+                const willOpen = inlineDetails.classList.contains('hidden');
+                inlineDetails.classList.toggle('hidden', !willOpen);
+                detailsButton.setAttribute('aria-expanded', String(willOpen));
+                detailsButton.textContent = willOpen ? '▲ Ocultar detalhes' : '📋 Ver detalhes';
+            };
+            inlineDetails.onclick = event => event.stopPropagation();
+        }
+        const openDetailButton = div.querySelector('.btn-open-detail-modal');
+        if (openDetailButton) {
+            openDetailButton.onclick = event => {
+                event.stopPropagation();
                 openOrderDetailModal(order);
             };
         }
@@ -837,6 +957,7 @@ function renderActiveOrders() {
             </div>
         `;
     }
+    updateWaiterTimers();
 }
 
 function deliverOrder(order) {
@@ -866,20 +987,23 @@ function openOrderDetailModal(order) {
 
     const horaPed = order.timestamp ? new Date(order.timestamp).toLocaleTimeString('pt-BR') : '--';
     const horaEnt = order.deliveredAt ? new Date(order.deliveredAt).toLocaleTimeString('pt-BR') : 'Não registrada';
-    const isLevar = order.tipoConsumo === 'levar' || (order.items && order.items.some(i => i.consumption === 'levar' || (i.product && i.product.name && i.product.name.includes('Para Levar'))));
-
     let itemsHTML = '';
     order.items.forEach(item => {
+        const itemName = item.product && item.product.name || 'Item';
+        const showsConsumption = itemName.includes(' na Chapa + ') || itemName.startsWith('Caldo ') || itemName.startsWith('Panqueca de ');
+        const consumption = item.consumption === 'levar' || itemName.includes('Para Levar')
+            ? '🛍️ Para levar' : '🍽️ Comer no local';
+        const statusLabels = { fila: 'Na fila', em_preparo: 'Em preparo', pronto: 'Pronto', entregue: 'Entregue' };
         itemsHTML += `
-            <div style="display:flex; justify-content:space-between; padding:0.4rem 0; border-bottom:1px dashed #eee;">
-                <span><strong>${item.qty}x</strong> ${item.product.name}</span>
+            <div class="waiter-detail-item">
+                <span><strong>${item.qty}x</strong> ${itemName}</span>
+                <small>${showsConsumption ? `${consumption} • ` : ''}${statusLabels[item.status || 'fila']}</small>
             </div>
         `;
     });
 
     els.detailModalBody.innerHTML = `
         <div style="background:#f8f9fa; padding:0.8rem; border-radius:8px; margin-bottom:1rem; font-size:0.9rem;">
-            <div><strong>Tipo:</strong> ${isLevar ? '🛍️ Para Levar (Viagem)' : '🍽️ Comer no Local'}</div>
             <div><strong>Atendente:</strong> ${order.waiterName || 'Geral'}</div>
             <div><strong>Mesa/Identificação:</strong> ${order.feature || 'Não informada'}</div>
             <div><strong>Horário do Pedido:</strong> ${horaPed}</div>
@@ -1062,6 +1186,40 @@ window.openProductOptions = function (productId, editIndex = null) {
         updateCaldoPricePreview();
         els.optionsModal.classList.remove('hidden');
         if (editItem) prefillProductOptions(editItem, 'caldo');
+    } else if (product.dynamic === "panqueca") {
+        els.modalOptionsTitle.textContent = 'Montar Panqueca';
+        els.optionsModalBody.innerHTML = `
+            <label><strong>1. Sabor da Panqueca:</strong></label>
+            <select id="panqueca-sabor">
+                <option value="Carne">Carne</option>
+                <option value="Frango">Frango</option>
+            </select>
+            <label><strong>2. Tipo de Arroz:</strong></label>
+            <select id="panqueca-arroz">
+                <option value="Arroz c/ Brócolis">Arroz com Brócolis</option>
+                <option value="Arroz Branco">Arroz Branco</option>
+                <option value="Baião">Baião de Dois</option>
+                <option value="Sem arroz">Sem arroz</option>
+            </select>
+            <label><strong>3. Deseja RETIRAR algo?</strong></label>
+            <div class="option-list-box removal-options">
+                <label class="option-checkbox"><input type="checkbox" name="panqueca-retira" value="Batata Palha"><span>Batata palha</span></label>
+            </div>
+            <label><strong>4. Local do Consumo:</strong></label>
+            <select id="panqueca-local">
+                <option value="Comer no Local" ${selectedTipoConsumo === 'local' ? 'selected' : ''}>Comer no Local</option>
+                <option value="Para Levar" ${selectedTipoConsumo === 'levar' ? 'selected' : ''}>Para Levar</option>
+            </select>
+            <label><strong>5. Quantidade:</strong></label>
+            <div class="option-qty-control">
+                <button type="button" class="option-qty-btn" onclick="changeOptionQty(-1)">−</button>
+                <input type="number" id="option-qty" value="1" min="1" max="99" inputmode="numeric">
+                <button type="button" class="option-qty-btn" onclick="changeOptionQty(1)">+</button>
+            </div>
+            <div class="configured-product-price">Valor unitário: ${formatCurrency(product.price)}</div>
+        `;
+        els.optionsModal.classList.remove('hidden');
+        if (editItem) prefillProductOptions(editItem, 'panqueca');
     } else if (product.dynamic === "prato") {
         els.modalOptionsTitle.textContent = `Montar Prato: ${product.name}`;
 
@@ -1074,9 +1232,10 @@ window.openProductOptions = function (productId, editIndex = null) {
         els.optionsModalBody.innerHTML = `
             <label><strong>1. Tipo de Arroz:</strong></label>
             <select id="prato-arroz" style="width:100%; padding:0.8rem; margin:0.5rem 0 1rem 0; border-radius:8px;">
+                <option value="Baião">Baião de Dois</option>
                 <option value="Arroz Branco">Arroz Branco</option>
                 <option value="Arroz c/ Brócolis">Arroz com Brócolis</option>
-                <option value="Baião">Baião de Dois</option>
+                <option value="Sem arroz">Sem arroz</option>
             </select>
             <label><strong>2. Deseja RETIRAR algo?</strong> Marque o que NÃO vai:</label>
             <div style="margin: 0.5rem 0 1rem 0; background:rgba(0,0,0,0.05); padding:1rem; border-radius:8px; border:1px solid #ddd; color:var(--danger)">
@@ -1114,6 +1273,15 @@ function prefillProductOptions(item, type) {
         }
         document.getElementById('caldo-local').value = item.consumption === 'levar' ? 'Para Levar' : 'Comer no Local';
         updateCaldoPricePreview();
+    } else if (type === 'panqueca') {
+        const match = name.match(/^Panqueca de (Carne|Frango) \+ (.+?) \[(?:TIRAR:\s*([^\]]+)|COMPLETO)\]\s+-/);
+        if (match) {
+            document.getElementById('panqueca-sabor').value = match[1];
+            document.getElementById('panqueca-arroz').value = match[2];
+            const removed = match[3] ? match[3].split(',').map(value => value.trim()) : [];
+            document.querySelectorAll('input[name="panqueca-retira"]').forEach(input => input.checked = removed.includes(input.value));
+        }
+        document.getElementById('panqueca-local').value = item.consumption === 'levar' ? 'Para Levar' : 'Comer no Local';
     } else {
         const riceMatch = name.match(/\+\s(.+?)\s\[(?:TIRAR:|COMPLETO)/);
         const removeMatch = name.match(/\[TIRAR:\s*([^\]]+)\]/);
@@ -1128,7 +1296,7 @@ function calculateCaldoPrice(tam, sabor, hasAccompaniment) {
     if (sabor === 'Camarão') {
         return tam === '350ml' ? (hasAccompaniment ? 20 : 18) : (hasAccompaniment ? 30 : 25);
     }
-    return tam === '350ml' ? (hasAccompaniment ? 18 : 15) : 27;
+    return tam === '350ml' ? (hasAccompaniment ? 18 : 15) : (hasAccompaniment ? 27 : 25);
 }
 
 function updateCaldoPricePreview() {
@@ -1172,6 +1340,14 @@ els.btnConfirmOptions.onclick = () => {
         let nName = `Caldo ${sabor} ${tam} (${temAcc ? "Com: " + accChecked.join(', ') : "Sem Acomp."}) - ${local}`;
         commitAddToCart(product, nName, preco, getOptionQty());
 
+    } else if (product.dynamic === "panqueca") {
+        const sabor = document.getElementById('panqueca-sabor').value;
+        const arroz = document.getElementById('panqueca-arroz').value;
+        const local = document.getElementById('panqueca-local').value;
+        const retiradas = Array.from(document.querySelectorAll('input[name="panqueca-retira"]:checked')).map(input => input.value);
+        const montagem = retiradas.length ? `[TIRAR: ${retiradas.join(', ')}]` : '[COMPLETO]';
+        const nome = `Panqueca de ${sabor} + ${arroz} ${montagem} - ${local}`;
+        commitAddToCart(product, nome, product.price, getOptionQty());
     } else if (product.dynamic === "prato") {
         const arroz = document.getElementById('prato-arroz').value;
         const local = document.getElementById('prato-local').value;
@@ -1293,6 +1469,8 @@ function setupEventListeners() {
     };
     els.btnCancelQuickOrder.onclick = () => els.quickOrderModal.classList.add('hidden');
     els.btnCancelNewOrder.onclick = () => els.newOrderModal.classList.add('hidden');
+    document.getElementById('close-quick-order-modal-x').onclick = () => els.quickOrderModal.classList.add('hidden');
+    document.getElementById('close-new-order-modal-x').onclick = () => els.newOrderModal.classList.add('hidden');
     els.btnCreateOrder.onclick = createNewOrder;
 
     els.backToOrdersBtn.onclick = () => {
@@ -1328,6 +1506,8 @@ function setupEventListeners() {
         pendingProductId = null;
         pendingEditIndex = null;
     };
+    document.getElementById('close-options-modal-x').onclick = els.btnCancelOptions.onclick;
+    document.getElementById('close-waiter-notif-x').onclick = stopContinuousAlarm;
 
     els.btnIndoBuscar.onclick = () => {
         stopContinuousAlarm();
@@ -1336,15 +1516,18 @@ function setupEventListeners() {
 
     if (els.btnClearHistory) {
         els.btnClearHistory.onclick = () => {
-            const entreguesCount = Object.values(globalActiveOrders).filter(o => o.items.every(i => i.status === 'entregue') || o.deliveredAt).length;
+            const entreguesList = Object.values(globalActiveOrders).filter(o => o.items.every(i => i.status === 'entregue') || o.deliveredAt);
+            const entreguesCount = entreguesList.length;
             if (entreguesCount === 0) {
                 alert("Não há pedidos entregues no histórico para limpar.");
                 return;
             }
             if (confirm(`Deseja limpar os ${entreguesCount} pedidos entregues do histórico? Os pedidos em aberto continuarão salvos.`)) {
                 const clearedAt = Date.now();
+                const clearedMarkers = Object.fromEntries(entreguesList.map(order => [order.id, clearedAt]));
+                applyDeletedOrderMarkers(clearedMarkers);
                 applyHistoryClear(clearedAt);
-                publishMQTT({ type: 'CLEAR_HISTORY', clearedAt });
+                publishMQTT({ type: 'CLEAR_HISTORY', clearedAt, deletedOrderIds: clearedMarkers });
                 renderActiveOrders();
             }
         };
@@ -1426,10 +1609,6 @@ function finalizeCurrentOrder(isQuickOrder) {
 
     const total = currentOrder.items.reduce((sum, item) => sum + item.product.price * item.qty, 0);
     const received = Math.max(0, Number(els.paymentReceived.value) || 0);
-    if (received > 0 && received < total) {
-        alert(`O valor recebido é menor que o total do pedido. Ainda faltam ${formatCurrency(total - received)}.`);
-        return;
-    }
     if (!quickMode && !currentOrder.senha) currentOrder.senha = assignOrderSenha();
     currentOrder.items.forEach(item => {
         const previous = existingOrder && existingOrder.items.find(oldItem => oldItem.id === item.id);
@@ -1582,8 +1761,9 @@ function renderCartModalItems() {
 let wakeLock = null;
 async function keepScreenAlive() {
     try {
-        if ('wakeLock' in navigator) {
+        if ('wakeLock' in navigator && (!wakeLock || wakeLock.released)) {
             wakeLock = await navigator.wakeLock.request('screen');
+            wakeLock.addEventListener('release', () => { wakeLock = null; }, { once: true });
         }
     } catch (err) { }
 }

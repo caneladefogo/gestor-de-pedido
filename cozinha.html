@@ -6,7 +6,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
     <title>Painel da Cozinha - Canela de Fogo</title>
     <link rel="icon" type="image/png" href="logo.png">
-    <link rel="stylesheet" href="cozinha.css?v=20260823-22">
+    <link rel="stylesheet" href="cozinha.css?v=20260830-4">
     <script src="assets/js/mqtt-4.3.7.min.js?v=20260823-1"></script>
 </head>
 
@@ -38,7 +38,7 @@
                     <h2>Estoque de Bebidas</h2>
                     <p>Digite o saldo atual ou use os atalhos de cada bebida.</p>
                 </div>
-                <button id="close-beverage-stock-btn" class="stock-close-btn">Fechar</button>
+                <button id="close-beverage-stock-btn" class="stock-close-btn dialog-close-x" aria-label="Fechar estoque">✕</button>
             </div>
 
             <div id="beverage-stock-list" class="beverage-stock-list"></div>
@@ -47,7 +47,7 @@
 
     <div id="prep-settings-overlay" class="overlay hidden">
         <div class="overlay-modal prep-settings-modal">
-            <div class="stock-modal-header"><div><h2>Tempos de preparo</h2><p>Valores em minutos usados para calcular a previsão da fila.</p></div><button id="close-prep-settings-btn" class="stock-close-btn">Fechar</button></div>
+            <div class="stock-modal-header"><div><h2>Tempos de preparo</h2><p>Valores em minutos usados para calcular a previsão da fila.</p></div><button id="close-prep-settings-btn" class="stock-close-btn dialog-close-x" aria-label="Fechar tempos de preparo">✕</button></div>
             <div class="prep-settings-sections">
                 <section class="prep-settings-group" aria-labelledby="prep-base-title">
                     <h3 id="prep-base-title">Base</h3>
@@ -79,7 +79,7 @@
                     <h2>Editar pedido <span id="edit-order-password"></span></h2>
                     <p>As alterações serão sincronizadas sem reiniciar o tempo de espera.</p>
                 </div>
-                <button id="close-edit-order-btn" class="stock-close-btn">Fechar</button>
+                <button id="close-edit-order-btn" class="stock-close-btn dialog-close-x" aria-label="Fechar edição">✕</button>
             </div>
             <div class="edit-order-fields">
                 <label>Cliente<input id="edit-order-client" type="text"></label>
@@ -111,6 +111,7 @@
     <!-- Overlay para permitir o Áudio (Navegadores bloqueiam som automático) -->
     <div id="audio-overlay" class="overlay">
         <div class="overlay-modal">
+            <button id="close-audio-overlay-btn" class="dialog-close-x" type="button" aria-label="Fechar ativação de som">✕</button>
             <h2>Bem-vindo à Cozinha</h2>
             <p>Clique no botão abaixo para ativar os alertas sonoros de novos pedidos.</p>
             <button id="start-btn">Ativar Som e Iniciar Painel</button>
@@ -122,10 +123,7 @@
         <div style="display: flex; gap: 0.5rem; margin-bottom: 0.8rem; flex-wrap: wrap;">
             <button id="tab-pratos" class="tab-btn"
                 style="background:var(--primary-color); color:#000; border:none; padding:0.8rem 1rem; font-weight:bold; border-radius:8px; flex:1; min-width: 120px; cursor:pointer;"
-                onclick="switchTab('pratos')">Pratos <span id="count-pratos-total" class="badge-pill">0</span></button>
-            <button id="tab-caldos" class="tab-btn"
-                style="background:#444; color:white; border:none; padding:0.8rem 1rem; font-weight:bold; border-radius:8px; flex:1; min-width: 120px; cursor:pointer;"
-                onclick="switchTab('caldos')">Caldos <span id="count-caldos-total" class="badge-pill">0</span></button>
+                onclick="switchTab('pratos')">Pedidos <span id="count-pratos-total" class="badge-pill">0</span></button>
             <button id="tab-entregues" class="tab-btn"
                 style="background:#444; color:white; border:none; padding:0.8rem 1rem; font-weight:bold; border-radius:8px; flex:1; min-width: 120px; cursor:pointer;"
                 onclick="switchTab('entregues')">Histórico Entregues <span id="kitchen-count-entregues" class="badge-pill">0</span></button>
@@ -168,11 +166,6 @@
             <section class="kanban-lane"><h2>Em preparo <span id="count-pratos-preparo" class="badge-pill">0</span></h2><div class="column new-orders" id="pratos-preparo-container"></div></section>
             <section class="kanban-lane"><h2>Pronto <span id="count-pratos-pronto" class="badge-pill">0</span></h2><div class="column new-orders" id="pratos-pronto-container"></div></section>
         </div>
-        <div class="kanban-board" id="caldos-container" style="display:none;">
-            <section class="kanban-lane"><h2>Na fila <span id="count-caldos-fila" class="badge-pill">0</span></h2><div class="column new-orders" id="caldos-fila-container"></div></section>
-            <section class="kanban-lane"><h2>Em preparo <span id="count-caldos-preparo" class="badge-pill">0</span></h2><div class="column new-orders" id="caldos-preparo-container"></div></section>
-            <section class="kanban-lane"><h2>Pronto <span id="count-caldos-pronto" class="badge-pill">0</span></h2><div class="column new-orders" id="caldos-pronto-container"></div></section>
-        </div>
         <div class="column" id="entregues-container" style="display:none;">
             <!-- Itens Entregues -->
         </div>
@@ -186,8 +179,8 @@
         </div>
     </main>
 
-    <script src="persistence.js?v=20260823-4"></script>
-    <script src="cozinha.js?v=20260823-19"></script>
+    <script src="persistence.js?v=20260830-4"></script>
+    <script src="cozinha.js?v=20260830-4"></script>
 </body>
 
 </html>

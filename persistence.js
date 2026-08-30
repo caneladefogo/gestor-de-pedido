@@ -86,7 +86,7 @@
 
     window.CanelaPersistence = api;
 
-    const statusRank = { fila: 0, pronto: 1, entregue: 2 };
+    const statusRank = { fila: 0, em_preparo: 1, pronto: 2, entregue: 3 };
     window.mergeCanelaOrders = function (current, incoming) {
         if (!current) return incoming;
         if (!incoming) return current;
@@ -111,14 +111,14 @@
             }
             const previousStatus = previous.status || 'fila';
             const incomingStatus = item.status || 'fila';
-            const strongestStatus = (statusRank[incomingStatus] || 0) >= (statusRank[previousStatus] || 0)
-                ? incomingStatus
-                : previousStatus;
+            const resolvedStatus = currentRevision === incomingRevision
+                ? ((statusRank[incomingStatus] || 0) >= (statusRank[previousStatus] || 0) ? incomingStatus : previousStatus)
+                : incomingStatus;
             const queueTimes = [Number(previous.queuedAt), Number(item.queuedAt)].filter(Number.isFinite);
             itemMap.set(item.id, {
                 ...previous,
                 ...item,
-                status: strongestStatus,
+                status: resolvedStatus,
                 queuedAt: queueTimes.length ? Math.min(...queueTimes) : (item.queuedAt || previous.queuedAt)
             });
         });
@@ -137,6 +137,38 @@
         merged.estimatedReadyAt = currentDeadline > 0 ? currentDeadline : (incomingDeadline > 0 ? incomingDeadline : null);
         merged.estimatedPrepMinutesAtEntry = Number(current.estimatedPrepMinutesAtEntry || incoming.estimatedPrepMinutesAtEntry || 0) || null;
         merged.updatedAt = Math.max(currentRevision, incomingRevision);
+
+        const statusOverrides = {};
+        [current.statusOverrides || {}, incoming.statusOverrides || {}].forEach(source => {
+            Object.entries(source).forEach(([itemId, override]) => {
+                const saved = statusOverrides[itemId];
+                if (!saved || Number(override.updatedAt || 0) >= Number(saved.updatedAt || 0)) {
+                    statusOverrides[itemId] = { status: override.status, updatedAt: Number(override.updatedAt || 0) };
+                }
+            });
+        });
+        merged.statusOverrides = statusOverrides;
+        merged.items.forEach(item => {
+            const override = item.id && statusOverrides[item.id];
+            if (!override || Number(override.updatedAt || 0) < merged.updatedAt) return;
+            item.status = override.status;
+            if (override.status === 'fila') {
+                delete item.preparationStartedAt;
+                delete item.readyAt;
+                delete item.deliveredAt;
+            } else if (override.status === 'em_preparo') {
+                item.preparationStartedAt ||= override.updatedAt;
+                delete item.readyAt;
+                delete item.deliveredAt;
+            } else if (override.status === 'pronto') {
+                item.preparationStartedAt ||= override.updatedAt;
+                item.readyAt = override.updatedAt;
+                delete item.deliveredAt;
+            } else if (override.status === 'entregue') {
+                item.readyAt ||= override.updatedAt;
+                item.deliveredAt = override.updatedAt;
+            }
+        });
 
         const currentNoteRevision = Number(current.kitchenNoteUpdatedAt || 0);
         const incomingNoteRevision = Number(incoming.kitchenNoteUpdatedAt || 0);
