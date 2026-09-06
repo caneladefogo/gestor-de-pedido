@@ -1662,6 +1662,21 @@ button:active, .module-link:active, .tab-btn:active, .icon-action-btn:active { t
     *, *::before, *::after { animation-duration: .01ms !important; transition-duration: .01ms !important; }
 }
 
+.kitchen-order-total {
+    margin-top: .45rem;
+    color: #ffc928;
+    font-size: .92rem;
+}
+.prep-block.item-doneness,
+.prep-block.individual-item-note {
+    border-left-color: #f0a500;
+    background: #302919;
+}
+.prep-block.individual-item-note span,
+.prep-block.item-doneness span {
+    overflow-wrap: anywhere;
+}
+
 /* Histórico recolhível e inteligência de acréscimos */
 #kitchen-history-bar {
     display: block !important;

@@ -789,6 +789,19 @@ function updateWaiterTimers() {
     });
 }
 
+function escapeHtml(value) {
+    return String(value ?? '').replace(/[&<>'"]/g, character => ({
+        '&': '&amp;', '<': '&lt;', '>': '&gt;', "'": '&#39;', '"': '&quot;'
+    })[character]);
+}
+
+function getOrderTotal(order) {
+    const calculated = (order && order.items || []).reduce((sum, item) => {
+        return sum + (Number(item.product && item.product.price) || 0) * (Number(item.qty) || 1);
+    }, 0);
+    return (order && order.items && order.items.length) ? calculated : (Number(order && order.total) || 0);
+}
+
 function renderActiveOrders() {
     updateTabBadges();
     els.activeOrdersContainer.innerHTML = '';
@@ -845,6 +858,7 @@ function renderActiveOrders() {
             ? `<span class="waiter-queue-position">Fila: ${queuePosition}º</span>`
             : '';
 
+        const orderTotal = getOrderTotal(order);
         const headerStr = `
             <div style="display:flex; justify-content:space-between; align-items:center;">
                 <div style="display:flex; align-items:center; gap:0.4rem;">
@@ -857,6 +871,7 @@ function renderActiveOrders() {
             <div style="font-size:1.15rem; font-weight:bold; margin-top:0.4rem; color:var(--primary-bg);">${order.clientName}</div>
             ${order.feature ? `<div style="font-size:0.85rem; color:#555; font-style:italic;">📍 ${order.feature}</div>` : ''}
             <div style="font-size:0.8rem; color:#888; margin-top:0.2rem;">Atend: <strong>${order.waiterName || 'Geral'}</strong></div>
+            <div class="waiter-order-total">Total: <strong>${formatCurrency(orderTotal)}</strong></div>
         `;
         const statusByTab = { fila: 'fila', preparo: 'em_preparo', pronto: 'pronto', entregue: 'entregue' };
         const operationalInfo = currentWaiterTab === 'entregue' ? '' : `${renderWaiterStatusFlow(statusByTab[currentWaiterTab])}${renderWaiterTimers(order)}`;
@@ -866,7 +881,8 @@ function renderActiveOrders() {
             const showsConsumption = itemName.includes(' na Chapa + ') || itemName.startsWith('Caldo ') || itemName.startsWith('Panqueca de ');
             const itemConsumption = item.consumption === 'levar' || itemName.includes('Para Levar')
                 ? '🛍️ Para levar' : '🍽️ Comer no local';
-            return `<div class="waiter-inline-detail-item"><strong>${item.qty}x ${itemName}</strong><small>${showsConsumption ? `${itemConsumption} • ` : ''}${detailStatusLabels[item.status || 'fila']}</small></div>`;
+            const itemDetails = [item.doneness ? `🔥 Ponto: ${escapeHtml(item.doneness)}` : '', item.note ? `📝 ${escapeHtml(item.note)}` : ''].filter(Boolean).join('<br>');
+            return `<div class="waiter-inline-detail-item"><strong>${item.qty}x ${itemName}</strong><small>${showsConsumption ? `${itemConsumption} • ` : ''}${detailStatusLabels[item.status || 'fila']}</small>${itemDetails ? `<span class="individual-item-note">${itemDetails}</span>` : ''}</div>`;
         }).join('');
         const detailsButtonHTML = `<div class="waiter-inline-details-wrap">
             <button class="btn-ver-detalhes" type="button" aria-expanded="false">📋 Ver detalhes</button>
@@ -998,6 +1014,8 @@ function openOrderDetailModal(order) {
             <div class="waiter-detail-item">
                 <span><strong>${item.qty}x</strong> ${itemName}</span>
                 <small>${showsConsumption ? `${consumption} • ` : ''}${statusLabels[item.status || 'fila']}</small>
+                ${item.doneness ? `<span class="individual-item-note">🔥 <strong>Ponto:</strong> ${escapeHtml(item.doneness)}</span>` : ''}
+                ${item.note ? `<span class="individual-item-note">📝 <strong>Observação do prato:</strong> ${escapeHtml(item.note)}</span>` : ''}
             </div>
         `;
     });
@@ -1008,6 +1026,7 @@ function openOrderDetailModal(order) {
             <div><strong>Mesa/Identificação:</strong> ${order.feature || 'Não informada'}</div>
             <div><strong>Horário do Pedido:</strong> ${horaPed}</div>
             <div><strong>Horário de Entrega:</strong> ${horaEnt}</div>
+            <div><strong>Total do pedido:</strong> ${formatCurrency(getOrderTotal(order))}</div>
             ${order.paymentReceived ? `<div><strong>Valor recebido:</strong> ${formatCurrency(order.paymentReceived)}</div>` : ''}
             ${order.changeDue !== null && order.changeDue !== undefined ? `<div><strong>Troco:</strong> ${formatCurrency(order.changeDue)}</div>` : ''}
         </div>
@@ -1216,6 +1235,10 @@ window.openProductOptions = function (productId, editIndex = null) {
                 <input type="number" id="option-qty" value="1" min="1" max="99" inputmode="numeric">
                 <button type="button" class="option-qty-btn" onclick="changeOptionQty(1)">+</button>
             </div>
+            <div class="individual-dish-note-section">
+                <label for="panqueca-note"><strong>6. Anotação deste prato (opcional):</strong></label>
+                <textarea id="panqueca-note" class="individual-dish-note" rows="2" placeholder="Ex: pouco molho, servir separado..."></textarea>
+            </div>
             <div class="configured-product-price">Valor unitário: ${formatCurrency(product.price)}</div>
         `;
         els.optionsModal.classList.remove('hidden');
@@ -1237,20 +1260,33 @@ window.openProductOptions = function (productId, editIndex = null) {
                 <option value="Arroz c/ Brócolis">Arroz com Brócolis</option>
                 <option value="Sem arroz">Sem arroz</option>
             </select>
-            <label><strong>2. Deseja RETIRAR algo?</strong> Marque o que NÃO vai:</label>
+            ${product.name.includes('Picanha') ? `<label><strong>2. Ponto da Picanha:</strong></label>
+            <select id="picanha-point" class="dish-point-select">
+                <option value="Chapeiro define" selected>Chapeiro define</option>
+                <option value="Mal passada">Mal passada</option>
+                <option value="Ao ponto para mal passada">Ao ponto para mal passada</option>
+                <option value="Ao ponto">Ao ponto</option>
+                <option value="Ao ponto para bem passada">Ao ponto para bem passada</option>
+                <option value="Bem passada">Bem passada</option>
+            </select>` : ''}
+            <label><strong>${product.name.includes('Picanha') ? '3' : '2'}. Deseja RETIRAR algo?</strong> Marque o que NÃO vai:</label>
             <div style="margin: 0.5rem 0 1rem 0; background:rgba(0,0,0,0.05); padding:1rem; border-radius:8px; border:1px solid #ddd; color:var(--danger)">
                 ${extrasHTML}
             </div>
-            <label><strong>3. Local do Consumo:</strong></label>
+            <label><strong>${product.name.includes('Picanha') ? '4' : '3'}. Local do Consumo:</strong></label>
             <select id="prato-local" style="width:100%; padding:0.8rem; margin:0.5rem 0 1rem 0; border-radius:8px;">
                 <option value="Comer no Local" ${selectedTipoConsumo === 'local' ? 'selected' : ''}>Comer no Local</option>
                 <option value="Para Levar" ${selectedTipoConsumo === 'levar' ? 'selected' : ''}>Para Levar</option>
             </select>
-            <label><strong>4. Quantidade:</strong></label>
+            <label><strong>${product.name.includes('Picanha') ? '5' : '4'}. Quantidade:</strong></label>
             <div class="option-qty-control">
                 <button type="button" class="option-qty-btn" onclick="changeOptionQty(-1)">−</button>
                 <input type="number" id="option-qty" value="1" min="1" max="99" inputmode="numeric">
                 <button type="button" class="option-qty-btn" onclick="changeOptionQty(1)">+</button>
+            </div>
+            <div class="individual-dish-note-section">
+                <label for="prato-note"><strong>${product.name.includes('Picanha') ? '6' : '5'}. Anotação deste prato (opcional):</strong></label>
+                <textarea id="prato-note" class="individual-dish-note" rows="2" placeholder="Ex: carne sem cebola, acompanhamento separado..."></textarea>
             </div>
         `;
         els.optionsModal.classList.remove('hidden');
@@ -1282,6 +1318,7 @@ function prefillProductOptions(item, type) {
             document.querySelectorAll('input[name="panqueca-retira"]').forEach(input => input.checked = removed.includes(input.value));
         }
         document.getElementById('panqueca-local').value = item.consumption === 'levar' ? 'Para Levar' : 'Comer no Local';
+        document.getElementById('panqueca-note').value = item.note || '';
     } else {
         const riceMatch = name.match(/\+\s(.+?)\s\[(?:TIRAR:|COMPLETO)/);
         const removeMatch = name.match(/\[TIRAR:\s*([^\]]+)\]/);
@@ -1289,6 +1326,9 @@ function prefillProductOptions(item, type) {
         const removed = removeMatch ? removeMatch[1].split(',').map(value => value.trim()) : [];
         document.querySelectorAll('input[name="prato-retira"]').forEach(input => input.checked = removed.includes(input.value));
         document.getElementById('prato-local').value = item.consumption === 'levar' ? 'Para Levar' : 'Comer no Local';
+        const pointSelect = document.getElementById('picanha-point');
+        if (pointSelect && item.doneness) pointSelect.value = item.doneness;
+        document.getElementById('prato-note').value = item.note || '';
     }
 }
 
@@ -1347,7 +1387,7 @@ els.btnConfirmOptions.onclick = () => {
         const retiradas = Array.from(document.querySelectorAll('input[name="panqueca-retira"]:checked')).map(input => input.value);
         const montagem = retiradas.length ? `[TIRAR: ${retiradas.join(', ')}]` : '[COMPLETO]';
         const nome = `Panqueca de ${sabor} + ${arroz} ${montagem} - ${local}`;
-        commitAddToCart(product, nome, product.price, getOptionQty());
+        commitAddToCart(product, nome, product.price, getOptionQty(), { note: document.getElementById('panqueca-note').value.trim() });
     } else if (product.dynamic === "prato") {
         const arroz = document.getElementById('prato-arroz').value;
         const local = document.getElementById('prato-local').value;
@@ -1357,7 +1397,10 @@ els.btnConfirmOptions.onclick = () => {
 
         let preco = product.name.includes("Picanha") ? 35.00 : 25.00;
         let nName = `${product.name} + ${arroz} ${retiStr} - ${local}`;
-        commitAddToCart(product, nName, preco, getOptionQty());
+        commitAddToCart(product, nName, preco, getOptionQty(), {
+            doneness: document.getElementById('picanha-point') ? document.getElementById('picanha-point').value : '',
+            note: document.getElementById('prato-note').value.trim()
+        });
     }
 
     els.optionsModal.classList.add('hidden');
@@ -1365,7 +1408,7 @@ els.btnConfirmOptions.onclick = () => {
     pendingEditIndex = null;
 };
 
-function commitAddToCart(baseProduct, finalName, finalPrice, quantity = 1) {
+function commitAddToCart(baseProduct, finalName, finalPrice, quantity = 1, itemDetails = {}) {
     if (!currentOrder) return;
     const productCopy = JSON.parse(JSON.stringify(baseProduct));
     productCopy.name = finalName;
@@ -1374,7 +1417,7 @@ function commitAddToCart(baseProduct, finalName, finalPrice, quantity = 1) {
 
     if (pendingEditIndex !== null && currentOrder.items[pendingEditIndex]) {
         const previous = currentOrder.items[pendingEditIndex];
-        currentOrder.items[pendingEditIndex] = { ...previous, product: productCopy, qty: quantity, consumption: newConsumption };
+        currentOrder.items[pendingEditIndex] = { ...previous, product: productCopy, qty: quantity, consumption: newConsumption, doneness: itemDetails.doneness || '', note: itemDetails.note || '' };
         updateCartIcon();
         renderCartModalItems();
         return;
@@ -1382,7 +1425,9 @@ function commitAddToCart(baseProduct, finalName, finalPrice, quantity = 1) {
 
     const existingPos = currentOrder.items.findIndex(item => {
         const itemConsumption = item.consumption || (item.product.name.includes('Para Levar') ? 'levar' : 'local');
-        return item.product.name === productCopy.name && itemConsumption === newConsumption && (item.status === 'fila' || !item.status);
+        return item.product.name === productCopy.name && itemConsumption === newConsumption
+            && (item.doneness || '') === (itemDetails.doneness || '') && (item.note || '') === (itemDetails.note || '')
+            && (item.status === 'fila' || !item.status);
     });
     if (existingPos > -1) {
         currentOrder.items[existingPos].qty += quantity;
@@ -1393,7 +1438,9 @@ function commitAddToCart(baseProduct, finalName, finalPrice, quantity = 1) {
             qty: quantity,
             status: 'fila',
             queuedAt: null,
-            consumption: newConsumption
+            consumption: newConsumption,
+            doneness: itemDetails.doneness || '',
+            note: itemDetails.note || ''
         });
     }
     updateCartIcon();
@@ -1739,6 +1786,8 @@ function renderCartModalItems() {
             <div class="cart-item-details">
                 <div class="cart-item-name">${item.product.name}</div>
                 <div class="cart-item-price">${formatCurrency(item.product.price)} un. • ${formatCurrency(item.product.price * item.qty)}</div>
+                ${item.doneness ? `<div class="cart-item-customization">🔥 Ponto: ${escapeHtml(item.doneness)}</div>` : ''}
+                ${item.note ? `<div class="cart-item-customization">📝 ${escapeHtml(item.note)}</div>` : ''}
                 ${item.status ? `<span style="font-size:0.75rem; color:#888;">Status: ${item.status}</span>` : ''}
                 <select class="item-consumption-select" onchange="changeItemConsumption(${idx}, this.value)">
                     <option value="local" ${itemConsumption === 'local' ? 'selected' : ''}>🍽️ Comer no local</option>

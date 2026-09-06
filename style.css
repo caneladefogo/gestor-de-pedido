@@ -1472,6 +1472,45 @@ input[type="checkbox"] {
 
 /* Movimento e feedback — curto para preservar a velocidade operacional */
 .cart-bar-total { color: #ffc000 !important; opacity: 1 !important; }
+
+.dish-point-select,
+.individual-dish-note {
+    width: 100%;
+    box-sizing: border-box;
+    margin: .5rem 0 1rem;
+    padding: .8rem;
+    border: 1px solid #d7cdca;
+    border-radius: 10px;
+    background: #fff;
+    color: #241f21;
+    font: inherit;
+}
+.individual-dish-note { resize: vertical; min-height: 74px; }
+.individual-dish-note-section {
+    margin-top: 1rem;
+    padding: .85rem;
+    border-radius: 12px;
+    background: #f6f2f0;
+}
+.individual-dish-note-section label { display: block; margin-bottom: .55rem; }
+.individual-dish-note-section .individual-dish-note { margin: 0; }
+.individual-item-note,
+.cart-item-customization {
+    display: block;
+    margin-top: .35rem;
+    padding: .4rem .55rem;
+    border-radius: 8px;
+    background: #fff4d6;
+    color: #5b1117;
+    font-size: .82rem;
+    line-height: 1.35;
+    overflow-wrap: anywhere;
+}
+.waiter-order-total {
+    margin-top: .45rem;
+    color: #5b1117;
+    font-size: .92rem;
+}
 body { transition: opacity .18s ease, transform .18s ease; }
 body.page-leaving { opacity: 0; transform: translateY(4px); pointer-events: none; }
 .screen.view-active { animation: screenEnter .22s ease both; }

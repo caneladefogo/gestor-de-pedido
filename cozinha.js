@@ -990,6 +990,13 @@ function escapeKitchenHtml(value) {
     })[character]);
 }
 
+function getKitchenOrderTotal(order) {
+    const calculated = (order && order.items || []).reduce((sum, item) => {
+        return sum + (Number(item.product && item.product.price) || 0) * (Number(item.qty) || 1);
+    }, 0);
+    return calculated || Number(order && order.total) || 0;
+}
+
 function applyItemStatusMetadata(item, status, changedAt = Date.now()) {
     item.status = status;
     if (status === 'fila') {
@@ -1211,6 +1218,7 @@ function renderCard(pedido, itemsArr, tabType, containerTarget) {
             </div>
             <div style="font-size: 1.25rem; font-weight: bold; margin-top: 0.4rem;">${pedido.clientName}</div>
             <div style="color: #bbb; font-size: 0.85rem; margin-top: 0.2rem;">Atendido por: <strong style="color:#fff;">${pedido.waiterName || 'Desconhecido'}</strong></div>
+            <div class="kitchen-order-total">Total: <strong>${getKitchenOrderTotal(pedido).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}</strong></div>
         </div>
         ${featureHTML}
         ${timerHTML}
@@ -1322,6 +1330,8 @@ function renderKitchenItem(item, allowReadyAction = false) {
         : '';
     const consumptionMatch = name.match(/-\s(Comer no Local|Para Levar)$/);
     const consumption = item.consumption === 'levar' ? 'Para Levar' : item.consumption === 'local' ? 'Comer no Local' : consumptionMatch ? consumptionMatch[1] : 'Comer no Local';
+    const doneness = item.doneness ? `<span class="prep-block item-doneness"><b>Ponto da picanha</b><span>🔥 ${escapeKitchenHtml(item.doneness)}</span></span>` : '';
+    const itemNote = item.note ? `<span class="prep-block individual-item-note"><b>Observação do prato</b><span>📝 ${escapeKitchenHtml(item.note)}</span></span>` : '';
 
     if (name.includes(' na Chapa + ')) {
         const baseName = name.split(' + ')[0];
@@ -1341,7 +1351,9 @@ function renderKitchenItem(item, allowReadyAction = false) {
             <span class="item-qty">${qty}x</span>
             <span class="item-name">${baseName}
                 <span class="prep-block"><b>Arroz</b><span>${riceMatch ? riceMatch[1] : 'Não informado'}</span></span>
+                ${doneness}
                 ${preparation}
+                ${itemNote}
             </span>
             <span class="prep-location ${consumption === 'Para Levar' ? 'to-go' : ''}">${consumption === 'Para Levar' ? '🛍️ PARA LEVAR' : '🍽️ COMER NO LOCAL'}</span>
             ${readyAction}
@@ -1365,6 +1377,7 @@ function renderKitchenItem(item, allowReadyAction = false) {
             <span class="item-name">Panqueca de ${flavor}
                 <span class="prep-block"><b>Arroz</b><span>${rice}</span></span>
                 ${preparation}
+                ${itemNote}
             </span>
             <span class="prep-location ${consumption === 'Para Levar' ? 'to-go' : ''}">${consumption === 'Para Levar' ? '🛍️ PARA LEVAR' : '🍽️ COMER NO LOCAL'}</span>
             ${readyAction}
