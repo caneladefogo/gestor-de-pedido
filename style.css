@@ -1511,6 +1511,52 @@ input[type="checkbox"] {
     color: #5b1117;
     font-size: .92rem;
 }
+
+.customer-edit-modal {
+    position: relative;
+    width: min(92vw, 460px);
+    text-align: left;
+}
+.customer-edit-modal h2 { color: var(--primary-bg); margin: 0 0 1.25rem; }
+.customer-edit-modal label { display: block; margin: .8rem 0 .35rem; color: #342f31; }
+.customer-edit-modal input,
+.customer-edit-modal select {
+    width: 100%;
+    min-height: 46px;
+    box-sizing: border-box;
+    padding: .75rem;
+    border: 1px solid #d7cdca;
+    border-radius: 10px;
+    background: #fff;
+    color: #241f21;
+    font: inherit;
+}
+.customer-edit-modal .btn-indo { margin-top: 1.2rem; }
+.edit-customer-data-btn {
+    width: 100%;
+    min-height: 42px;
+    margin-top: .65rem;
+    padding: .6rem;
+    border: 0;
+    border-radius: 9px;
+    background: #e9e2df;
+    color: #5b1117;
+    font-weight: 800;
+    cursor: pointer;
+}
+.waiter-item-delivery-check {
+    display: flex;
+    align-items: center;
+    gap: .55rem;
+    margin-top: .45rem;
+    padding: .55rem .65rem;
+    border-radius: 9px;
+    background: #e6f6eb;
+    color: #176b37;
+    font-size: .82rem;
+    font-weight: 800;
+}
+.waiter-item-delivery-check input { width: 20px; height: 20px; accent-color: #24a259; }
 body { transition: opacity .18s ease, transform .18s ease; }
 body.page-leaving { opacity: 0; transform: translateY(4px); pointer-events: none; }
 .screen.view-active { animation: screenEnter .22s ease both; }

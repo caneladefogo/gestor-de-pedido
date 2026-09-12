@@ -636,14 +636,14 @@ function updateKitchenCounters() {
     if (todayEl) todayEl.textContent = deliveredToday.length;
     if (itemsEl) itemsEl.textContent = deliveredUnits;
     if (averageEl) averageEl.textContent = `${averageMinutes} min`;
-    const plateTotals = { carne: 0, picanha: 0 };
-    const riceTotals = { carne: new Map(), picanha: new Map() };
+    const plateTotals = { carne: 0, picanha: 0, misto: 0 };
+    const riceTotals = { carne: new Map(), picanha: new Map(), misto: new Map() };
     const brothTotals = new Map(['Carne', 'Quenga', 'Camarão', 'Frango'].map(name => [name, { withAcc: 0, withoutAcc: 0 }]));
     deliveredOrders.forEach(order => (order.items || []).forEach(item => {
         const rawName = item.product && item.product.name || '';
         const qty = Number(item.qty) || 1;
         const normalized = rawName.toLowerCase();
-        const plateType = normalized.includes('carne de sol na chapa') ? 'carne' : normalized.includes('picanha na chapa') ? 'picanha' : null;
+        const plateType = normalized.includes('carne de sol na chapa') ? 'carne' : normalized.includes('picanha na chapa') ? 'picanha' : normalized.includes('misto na chapa') ? 'misto' : null;
         if (plateType) {
             plateTotals[plateType] += qty;
             const riceMatch = rawName.match(/\+\s*(.+?)\s*\[(?:TIRAR:|COMPLETO)/i);
@@ -670,6 +670,7 @@ function updateKitchenCounters() {
     if (metricsEl) metricsEl.innerHTML = `
         <div class="delivered-item-card delivered-item-group"><div><span>Carne de Sol na Chapa</span><strong>${plateTotals.carne}</strong></div><small>Arroz por tipo</small>${riceRows('carne')}</div>
         <div class="delivered-item-card delivered-item-group"><div><span>Picanha na Chapa</span><strong>${plateTotals.picanha}</strong></div><small>Arroz por tipo</small>${riceRows('picanha')}</div>
+        <div class="delivered-item-card delivered-item-group"><div><span>Misto na Chapa</span><strong>${plateTotals.misto}</strong></div><small>Arroz por tipo</small>${riceRows('misto')}</div>
         ${brothRows.map(([name, totals]) => `<div class="delivered-item-card delivered-item-group"><div><span>Caldo de ${escapeKitchenHtml(name)}</span><strong>${totals.withAcc + totals.withoutAcc}</strong></div><small>Acompanhamento</small><span><em>Com acompanhamento</em><b>${totals.withAcc}</b></span><span><em>Sem acompanhamento</em><b>${totals.withoutAcc}</b></span></div>`).join('')}
     `;
     renderTimeIntelligence(deliveredOrders);
@@ -768,7 +769,7 @@ function renderTimeIntelligence(deliveredOrders) {
 
 function isChapaItem(item) {
     const name = item && item.product && item.product.name ? item.product.name.toLowerCase() : '';
-    return name.includes('carne de sol na chapa') || name.includes('picanha na chapa');
+    return name.includes('carne de sol na chapa') || name.includes('picanha na chapa') || name.includes('misto na chapa');
 }
 
 function isCaldoItem(item) {
@@ -1337,7 +1338,9 @@ function renderKitchenItem(item, allowReadyAction = false) {
         const baseName = name.split(' + ')[0];
         const riceMatch = name.match(/\+\s(.+?)\s\[(?:TIRAR:|COMPLETO)/);
         const removeMatch = name.match(/\[TIRAR:\s*([^\]]+)\]/);
+        const additionsMatch = name.match(/\[ADICIONAIS:\s*([^\]]+)\]/i);
         const removed = removeMatch ? removeMatch[1].split(',').map(value => value.trim()) : [];
+        const additions = Array.isArray(item.additions) ? item.additions : additionsMatch ? additionsMatch[1].split(',').map(value => value.trim()) : [];
         const defaults = baseName.includes('Picanha')
             ? ['Tropeiro', 'Salada', 'Vinagrete', 'Farofa', 'Macaxeira', 'Maionese', 'Batata Palha', 'Vatapá']
             : ['Tropeiro', 'Salada', 'Vinagrete', 'Farofa', 'Macaxeira', 'Vatapá'];
@@ -1353,6 +1356,7 @@ function renderKitchenItem(item, allowReadyAction = false) {
                 <span class="prep-block"><b>Arroz</b><span>${riceMatch ? riceMatch[1] : 'Não informado'}</span></span>
                 ${doneness}
                 ${preparation}
+                ${additions.length ? `<span class="prep-block prep-additions"><b>Adicionais</b><span>${additions.map(escapeKitchenHtml).join(' • ')}</span></span>` : ''}
                 ${itemNote}
             </span>
             <span class="prep-location ${consumption === 'Para Levar' ? 'to-go' : ''}">${consumption === 'Para Levar' ? '🛍️ PARA LEVAR' : '🍽️ COMER NO LOCAL'}</span>
@@ -1464,9 +1468,8 @@ document.body.addEventListener('touchstart', keepScreenAlive);
 // --- GESTOR DE ESTOQUE DE BEBIDAS ---
 const beverageNames = [
     'Coca-Cola Lata', 'Coca-Cola Zero Lata', 'Fanta Uva Lata', 'Fanta Laranja Lata',
-    'Coca-Cola 1L', 'Fanta Uva 1L', 'Fanta Laranja 1L', 'Baré 1L',
-    'Suco de Goiaba', 'Suco de Açerola', 'Suco de Maracujá',
-    'Água Mineral', 'Redbull', 'Monster'
+    'Coca-Cola 1L', 'Fanta Laranja 1L', 'Baré 1L',
+    'Suco de Acerola', 'Suco de Maracujá', 'Água Mineral'
 ];
 
 const stockEls = {
@@ -1486,6 +1489,7 @@ function loadBeverageStock() {
     try {
         const saved = JSON.parse(localStorage.getItem('canela_beverage_stock'));
         const data = saved && saved.items ? saved : createInitialBeverageStock();
+        if (!data.items['Suco de Acerola'] && data.items['Suco de Açerola']) data.items['Suco de Acerola'] = { ...data.items['Suco de Açerola'] };
         beverageNames.forEach(name => {
             if (!data.items[name]) data.items[name] = { qty: 0, minimum: 5, configured: false };
             const minimum = Math.floor(Number(data.items[name].minimum));
@@ -1525,6 +1529,7 @@ function receiveStockSnapshot(stock) {
     const currentRevision = Number(beverageStock.updatedAt || 0);
     if (incomingRevision < currentRevision) return;
     beverageStock = stock;
+    if (!beverageStock.items['Suco de Acerola'] && beverageStock.items['Suco de Açerola']) beverageStock.items['Suco de Acerola'] = { ...beverageStock.items['Suco de Açerola'] };
     if (!Array.isArray(beverageStock.movements)) beverageStock.movements = [];
     if (!beverageStock.processedItems) beverageStock.processedItems = {};
     beverageNames.forEach(name => {

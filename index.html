@@ -6,7 +6,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
     <title>Pedidos - Canela de Fogo</title>
     <link rel="icon" type="image/png" href="logo.png">
-    <link rel="stylesheet" href="style.css?v=20260906-4">
+    <link rel="stylesheet" href="style.css?v=20260912-3">
 </head>
 
 <body>
@@ -201,6 +201,29 @@
         </div>
     </div>
 
+    <!-- Modal de edição dos dados do cliente -->
+    <div id="edit-customer-modal" class="notification-overlay hidden">
+        <div class="notification-modal customer-edit-modal">
+            <button type="button" id="close-edit-customer-x" class="dialog-close-x" aria-label="Fechar edição do cliente">✕</button>
+            <h2>Editar dados do cliente</h2>
+            <label for="edit-customer-name"><strong>Nome do cliente</strong></label>
+            <input id="edit-customer-name" type="text" placeholder="Nome do cliente">
+            <label for="edit-customer-feature"><strong>Características / mesa</strong></label>
+            <input id="edit-customer-feature" type="text" placeholder="Ex: Mesa 01, camisa preta">
+            <label for="edit-customer-priority"><strong>Prioridade</strong></label>
+            <select id="edit-customer-priority">
+                <option value="normal">Normal</option>
+                <option value="idoso60">Idoso 60+</option>
+                <option value="idoso80">Idoso 80+</option>
+                <option value="gestante">Gestante</option>
+                <option value="pcd">Pessoa com deficiência</option>
+                <option value="autista">Pessoa autista</option>
+                <option value="colo">Pessoa com criança de colo</option>
+            </select>
+            <button type="button" id="save-edit-customer" class="btn-indo">SALVAR DADOS</button>
+        </div>
+    </div>
+
     <!-- Modal exclusivo para iniciar Pedido Rápido -->
     <div class="notification-overlay hidden" id="quick-order-modal">
         <div class="notification-modal quick-order-create-modal">
@@ -274,8 +297,8 @@
 
     <!-- Biblioteca MQTT para rede em tempo real -->
     <script src="assets/js/mqtt-4.3.7.min.js?v=20260823-1"></script>
-    <script src="persistence.js?v=20260906-4"></script>
-    <script src="app.js?v=20260906-4"></script>
+    <script src="persistence.js?v=20260912-3"></script>
+    <script src="app.js?v=20260912-3"></script>
 </body>
 
 </html>

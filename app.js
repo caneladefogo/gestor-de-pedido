@@ -1,6 +1,7 @@
 const DB = {
     products: [
         { id: 1, name: "Carne de Sol na Chapa", desc: "Montar Prato", price: 25.00, dynamic: "prato", category: "Pratos" },
+        { id: 19, name: "Misto na Chapa", desc: "Montar Prato", price: 25.00, dynamic: "prato", category: "Pratos" },
         { id: 2, name: "Picanha na Chapa", desc: "Montar Prato", price: 35.00, dynamic: "prato", category: "Pratos" },
 
         { id: 3, name: "Caldo", desc: "Montar Caldo", price: 0.00, dynamic: "caldo", category: "Caldos" },
@@ -11,17 +12,13 @@ const DB = {
         { id: 7, name: "Fanta Laranja Lata", desc: "350ml", price: 6.00, category: "Refrigerantes" },
 
         { id: 8, name: "Coca-Cola 1L", desc: "1 Litro", price: 12.00, category: "Refrigerantes" },
-        { id: 9, name: "Fanta Uva 1L", desc: "1 Litro", price: 12.00, category: "Refrigerantes" },
         { id: 10, name: "Fanta Laranja 1L", desc: "1 Litro", price: 12.00, category: "Refrigerantes" },
-        { id: 11, name: "Baré 1L", desc: "1 Litro", price: 10.00, category: "Refrigerantes" },
+        { id: 11, name: "Baré 1L", desc: "1 Litro", price: 12.00, category: "Refrigerantes" },
 
-        { id: 12, name: "Suco de Goiaba", desc: "Tamanho Único", price: 8.00, category: "Sucos" },
-        { id: 13, name: "Suco de Açerola", desc: "Tamanho Único", price: 8.00, category: "Sucos" },
-        { id: 14, name: "Suco de Maracujá", desc: "Tamanho Único", price: 8.00, category: "Sucos" },
+        { id: 13, name: "Suco de Acerola", desc: "350ml", price: 10.00, category: "Sucos" },
+        { id: 14, name: "Suco de Maracujá", desc: "350ml", price: 10.00, category: "Sucos" },
 
-        { id: 15, name: "Água Mineral", desc: "", price: 5.00, category: "Outras Bebidas" },
-        { id: 16, name: "Redbull", desc: "Lata", price: 12.00, category: "Outras Bebidas" },
-        { id: 17, name: "Monster", desc: "Lata", price: 12.00, category: "Outras Bebidas" },
+        { id: 15, name: "Água Mineral", desc: "", price: 6.00, category: "Outras Bebidas" },
         { id: 18, name: "Panqueca", desc: "Montar Panqueca", price: 25.00, dynamic: "panqueca", category: "Pratos" }
     ]
 };
@@ -33,7 +30,7 @@ let historyClearedAt = Number(localStorage.getItem('canela_history_cleared_at'))
 let deletedOrderIds = loadDeletedOrderIds();
 let globalActiveOrders = loadStoredOrders();
 let globalSenhaCount = parseInt(localStorage.getItem('canela_senha'), 10) || 0;
-let activeCategory = "Todos";
+let activeCategory = "Pratos";
 let currentWaiterTab = 'fila';
 let searchQuery = "";
 let selectedOrderDetail = null;
@@ -552,6 +549,12 @@ const els = {
     newOrderPriority: document.getElementById('new-order-priority'),
     btnCreateOrder: document.getElementById('btn-create-order'),
     btnCancelNewOrder: document.getElementById('btn-cancel-new-order'),
+    editCustomerModal: document.getElementById('edit-customer-modal'),
+    editCustomerName: document.getElementById('edit-customer-name'),
+    editCustomerFeature: document.getElementById('edit-customer-feature'),
+    editCustomerPriority: document.getElementById('edit-customer-priority'),
+    closeEditCustomer: document.getElementById('close-edit-customer-x'),
+    saveEditCustomer: document.getElementById('save-edit-customer'),
     quickOrderModal: document.getElementById('quick-order-modal'),
     btnStartQuickOrder: document.getElementById('btn-start-quick-order'),
     btnCancelQuickOrder: document.getElementById('btn-cancel-quick-order'),
@@ -734,12 +737,12 @@ function getWaiterEstimateMinutes(order) {
     const deadline = Number(order.estimatedReadyAt || 0);
     if (deadline > start) return Math.max(1, Math.round((deadline - start) / 60000));
     const pendingItems = (order.items || []).filter(item => ['fila', 'em_preparo'].includes(item.status || 'fila'));
-    const hasPlate = pendingItems.some(item => /Carne de Sol na Chapa|Picanha na Chapa/.test(item.product && item.product.name || ''));
+    const hasPlate = pendingItems.some(item => /Carne de Sol na Chapa|Picanha na Chapa|Misto na Chapa/.test(item.product && item.product.name || ''));
     const hasBroth = pendingItems.some(item => (item.product && item.product.name || '').startsWith('Caldo '));
     let plateEstimate = Math.max(0, ...pendingItems.map(item => {
         const name = item.product && item.product.name || '';
         if (name.includes('Picanha na Chapa')) return 12;
-        if (name.includes('Carne de Sol na Chapa')) return 10;
+        if (name.includes('Carne de Sol na Chapa') || name.includes('Misto na Chapa')) return 10;
         return 0;
     }));
     let brothEstimate = hasBroth ? 8 : 0;
@@ -752,7 +755,7 @@ function getWaiterEstimateMinutes(order) {
         const name = item.product && item.product.name || '';
         const qty = Math.max(1, Number(item.qty) || 1);
         if (hasPlate && name.includes('Picanha na Chapa')) plateEstimate += qty * 6;
-        else if (hasPlate && name.includes('Carne de Sol na Chapa')) plateEstimate += qty * 4;
+        else if (hasPlate && (name.includes('Carne de Sol na Chapa') || name.includes('Misto na Chapa'))) plateEstimate += qty * 4;
         if (hasBroth && name.startsWith('Caldo ')) brothEstimate += qty * 3;
     }));
     return Math.max(plateEstimate, brothEstimate, 1);
@@ -877,12 +880,15 @@ function renderActiveOrders() {
         const operationalInfo = currentWaiterTab === 'entregue' ? '' : `${renderWaiterStatusFlow(statusByTab[currentWaiterTab])}${renderWaiterTimers(order)}`;
         const detailStatusLabels = { fila: 'Na fila', em_preparo: 'Em preparo', pronto: 'Pronto', entregue: 'Entregue' };
         const detailItemsHTML = order.items.map(item => {
+            item.id ||= `item_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
             const itemName = item.product && item.product.name || 'Item';
             const showsConsumption = itemName.includes(' na Chapa + ') || itemName.startsWith('Caldo ') || itemName.startsWith('Panqueca de ');
             const itemConsumption = item.consumption === 'levar' || itemName.includes('Para Levar')
                 ? '🛍️ Para levar' : '🍽️ Comer no local';
             const itemDetails = [item.doneness ? `🔥 Ponto: ${escapeHtml(item.doneness)}` : '', item.note ? `📝 ${escapeHtml(item.note)}` : ''].filter(Boolean).join('<br>');
-            return `<div class="waiter-inline-detail-item"><strong>${item.qty}x ${itemName}</strong><small>${showsConsumption ? `${itemConsumption} • ` : ''}${detailStatusLabels[item.status || 'fila']}</small>${itemDetails ? `<span class="individual-item-note">${itemDetails}</span>` : ''}</div>`;
+            const canConfirmDelivery = ['pronto', 'entregue'].includes(item.status);
+            const deliveryCheck = canConfirmDelivery ? `<label class="waiter-item-delivery-check"><input type="checkbox" data-item-id="${escapeHtml(item.id)}" ${item.status === 'entregue' ? 'checked disabled' : ''}> <span>Item entregue</span></label>` : '';
+            return `<div class="waiter-inline-detail-item"><strong>${item.qty}x ${itemName}</strong><small>${showsConsumption ? `${itemConsumption} • ` : ''}${detailStatusLabels[item.status || 'fila']}</small>${itemDetails ? `<span class="individual-item-note">${itemDetails}</span>` : ''}${deliveryCheck}</div>`;
         }).join('');
         const detailsButtonHTML = `<div class="waiter-inline-details-wrap">
             <button class="btn-ver-detalhes" type="button" aria-expanded="false">📋 Ver detalhes</button>
@@ -951,6 +957,24 @@ function renderActiveOrders() {
             };
         }
 
+        div.querySelectorAll('.waiter-item-delivery-check input').forEach(input => {
+            input.onclick = event => event.stopPropagation();
+            input.onchange = event => {
+                event.stopPropagation();
+                setWaiterItemDelivered(order, input.dataset.itemId, input.checked);
+            };
+        });
+
+        const editCustomerButton = document.createElement('button');
+        editCustomerButton.type = 'button';
+        editCustomerButton.className = 'edit-customer-data-btn';
+        editCustomerButton.textContent = '✏️ Editar dados do cliente';
+        editCustomerButton.onclick = event => {
+            event.stopPropagation();
+            openEditCustomerModal(order);
+        };
+        div.appendChild(editCustomerButton);
+
         const deleteButton = document.createElement('button');
         deleteButton.type = 'button';
         deleteButton.className = 'delete-order-btn';
@@ -994,6 +1018,52 @@ function deliverOrder(order) {
     globalActiveOrders[order.id] = order;
     saveStoredOrders();
     publishMQTT({ type: 'ORDER_UPDATE', order: order });
+    renderActiveOrders();
+}
+
+function setWaiterItemDelivered(order, itemId, delivered) {
+    const item = (order.items || []).find(candidate => candidate.id === itemId);
+    if (!item || !['pronto', 'entregue'].includes(item.status)) return;
+    const changedAt = Date.now();
+    item.status = delivered ? 'entregue' : 'pronto';
+    if (delivered) item.deliveredAt = changedAt;
+    else delete item.deliveredAt;
+    const fullyDelivered = order.items.length > 0 && order.items.every(candidate => candidate.status === 'entregue');
+    if (fullyDelivered) order.deliveredAt = changedAt;
+    else delete order.deliveredAt;
+    order.updatedAt = changedAt;
+    globalActiveOrders[order.id] = order;
+    saveStoredOrders();
+    publishMQTT({ type: 'ORDER_UPDATE', order });
+    renderActiveOrders();
+}
+
+let editingCustomerOrderId = null;
+function openEditCustomerModal(order) {
+    editingCustomerOrderId = order.id;
+    els.editCustomerName.value = order.clientName || '';
+    els.editCustomerFeature.value = order.feature || '';
+    els.editCustomerPriority.value = order.priority || 'normal';
+    els.editCustomerModal.classList.remove('hidden');
+    els.editCustomerName.focus();
+}
+
+function closeEditCustomerModal() {
+    editingCustomerOrderId = null;
+    els.editCustomerModal.classList.add('hidden');
+}
+
+function saveEditCustomerData() {
+    const order = globalActiveOrders[editingCustomerOrderId];
+    if (!order) return closeEditCustomerModal();
+    order.clientName = els.editCustomerName.value.trim() || order.clientName || 'Cliente';
+    order.feature = els.editCustomerFeature.value.trim();
+    order.priority = els.editCustomerPriority.value || 'normal';
+    order.updatedAt = Date.now();
+    globalActiveOrders[order.id] = order;
+    saveStoredOrders();
+    publishMQTT({ type: 'ORDER_UPDATE', order });
+    closeEditCustomerModal();
     renderActiveOrders();
 }
 
@@ -1064,7 +1134,7 @@ function openExistingOrder(orderObj) {
 }
 
 function renderCategories() {
-    const categories = ["Todos", ...new Set(DB.products.map(p => p.category))];
+    const categories = [...new Set(DB.products.map(p => p.category))];
     if (els.categoriesContainer) {
         els.categoriesContainer.innerHTML = '';
         categories.forEach(cat => {
@@ -1083,9 +1153,7 @@ function renderCategories() {
 
 function renderProducts() {
     els.productsContainer.innerHTML = '';
-    const filtered = activeCategory === "Todos"
-        ? DB.products
-        : DB.products.filter(p => p.category === activeCategory);
+    const filtered = DB.products.filter(p => p.category === activeCategory);
 
     filtered.forEach(p => {
         const div = document.createElement('div');
@@ -1175,8 +1243,6 @@ window.openProductOptions = function (productId, editIndex = null) {
             <select id="caldo-sabor" style="width:100%; padding:0.8rem; margin:0.5rem 0 1rem 0; border-radius:8px;">
                 <option value="Carne">Carne</option>
                 <option value="Quenga">Quenga</option>
-                <option value="Camarão">Camarão</option>
-                <option value="Frango">Frango</option>
             </select>
             <label><strong>3. Acompanhamentos?</strong></label>
             <div style="margin: 0.5rem 0 1rem 0; background:rgba(0,0,0,0.05); padding:1rem; border-radius:8px; border:1px solid #ddd;">
@@ -1245,12 +1311,19 @@ window.openProductOptions = function (productId, editIndex = null) {
         if (editItem) prefillProductOptions(editItem, 'panqueca');
     } else if (product.dynamic === "prato") {
         els.modalOptionsTitle.textContent = `Montar Prato: ${product.name}`;
+        const acceptsAdditions = product.name.includes('Carne de Sol') || product.name.includes('Misto');
 
-        let extras = product.name.includes("Carne de Sol")
-            ? ["Tropeiro", "Salada", "Vinagrete", "Farofa", "Macaxeira", "Vatapá"]
-            : ["Tropeiro", "Salada", "Vinagrete", "Farofa", "Macaxeira", "Maionese", "Batata Palha", "Vatapá"];
+        let extras = product.name.includes("Picanha")
+            ? ["Tropeiro", "Salada", "Vinagrete", "Farofa", "Macaxeira", "Maionese", "Batata Palha", "Vatapá"]
+            : ["Tropeiro", "Salada", "Vinagrete", "Farofa", "Macaxeira", "Vatapá"];
 
         let extrasHTML = extras.map(e => `<label class="option-checkbox"><input type="checkbox" name="prato-retira" value="${e}"><span>${e}</span></label>`).join('');
+        const additionsHTML = ['Banana Frita', 'Maionese', 'Batata Palha', 'Purê de Batata']
+            .map(addition => `<label class="option-checkbox"><input type="checkbox" name="prato-adicional" value="${addition}"><span>${addition} <b>+ R$ 3,00</b></span></label>`)
+            .join('');
+        const localStep = product.name.includes('Picanha') ? 4 : acceptsAdditions ? 4 : 3;
+        const quantityStep = localStep + 1;
+        const noteStep = quantityStep + 1;
 
         els.optionsModalBody.innerHTML = `
             <label><strong>1. Tipo de Arroz:</strong></label>
@@ -1273,22 +1346,30 @@ window.openProductOptions = function (productId, editIndex = null) {
             <div style="margin: 0.5rem 0 1rem 0; background:rgba(0,0,0,0.05); padding:1rem; border-radius:8px; border:1px solid #ddd; color:var(--danger)">
                 ${extrasHTML}
             </div>
-            <label><strong>${product.name.includes('Picanha') ? '4' : '3'}. Local do Consumo:</strong></label>
+            ${acceptsAdditions ? `<label><strong>3. Adicionais:</strong> Cada item acrescenta R$ 3,00:</label>
+            <div class="option-list-box dish-additions-options">
+                ${additionsHTML}
+            </div>` : ''}
+            <label><strong>${localStep}. Local do Consumo:</strong></label>
             <select id="prato-local" style="width:100%; padding:0.8rem; margin:0.5rem 0 1rem 0; border-radius:8px;">
                 <option value="Comer no Local" ${selectedTipoConsumo === 'local' ? 'selected' : ''}>Comer no Local</option>
                 <option value="Para Levar" ${selectedTipoConsumo === 'levar' ? 'selected' : ''}>Para Levar</option>
             </select>
-            <label><strong>${product.name.includes('Picanha') ? '5' : '4'}. Quantidade:</strong></label>
+            <label><strong>${quantityStep}. Quantidade:</strong></label>
             <div class="option-qty-control">
                 <button type="button" class="option-qty-btn" onclick="changeOptionQty(-1)">−</button>
                 <input type="number" id="option-qty" value="1" min="1" max="99" inputmode="numeric">
                 <button type="button" class="option-qty-btn" onclick="changeOptionQty(1)">+</button>
             </div>
             <div class="individual-dish-note-section">
-                <label for="prato-note"><strong>${product.name.includes('Picanha') ? '6' : '5'}. Anotação deste prato (opcional):</strong></label>
+                <label for="prato-note"><strong>${noteStep}. Anotação deste prato (opcional):</strong></label>
                 <textarea id="prato-note" class="individual-dish-note" rows="2" placeholder="Ex: carne sem cebola, acompanhamento separado..."></textarea>
             </div>
+            <div id="prato-price-preview" class="configured-product-price"></div>
         `;
+        document.querySelectorAll('input[name="prato-adicional"]').forEach(input => input.addEventListener('change', updatePratoPricePreview));
+        document.getElementById('option-qty').addEventListener('input', updatePratoPricePreview);
+        updatePratoPricePreview();
         els.optionsModal.classList.remove('hidden');
         if (editItem) prefillProductOptions(editItem, 'prato');
     } else {
@@ -1325,10 +1406,14 @@ function prefillProductOptions(item, type) {
         if (riceMatch) document.getElementById('prato-arroz').value = riceMatch[1];
         const removed = removeMatch ? removeMatch[1].split(',').map(value => value.trim()) : [];
         document.querySelectorAll('input[name="prato-retira"]').forEach(input => input.checked = removed.includes(input.value));
+        const additionsMatch = name.match(/\[ADICIONAIS:\s*([^\]]+)\]/i);
+        const additions = Array.isArray(item.additions) ? item.additions : additionsMatch ? additionsMatch[1].split(',').map(value => value.trim()) : [];
+        document.querySelectorAll('input[name="prato-adicional"]').forEach(input => input.checked = additions.includes(input.value));
         document.getElementById('prato-local').value = item.consumption === 'levar' ? 'Para Levar' : 'Comer no Local';
         const pointSelect = document.getElementById('picanha-point');
         if (pointSelect && item.doneness) pointSelect.value = item.doneness;
         document.getElementById('prato-note').value = item.note || '';
+        updatePratoPricePreview();
     }
 }
 
@@ -1350,12 +1435,24 @@ function updateCaldoPricePreview() {
     preview.textContent = `Unitário: ${formatCurrency(unitPrice)} • Total: ${formatCurrency(unitPrice * qty)}`;
 }
 
+function updatePratoPricePreview() {
+    const preview = document.getElementById('prato-price-preview');
+    if (!preview || !pendingProductId) return;
+    const product = DB.products.find(entry => entry.id === pendingProductId);
+    if (!product) return;
+    const additionsCount = document.querySelectorAll('input[name="prato-adicional"]:checked').length;
+    const unitPrice = Number(product.price) + (additionsCount * 3);
+    const quantity = getOptionQty();
+    preview.textContent = `Unitário: ${formatCurrency(unitPrice)} • Total: ${formatCurrency(unitPrice * quantity)}`;
+}
+
 window.changeOptionQty = function (delta) {
     const input = document.getElementById('option-qty');
     if (!input) return;
     const current = parseInt(input.value, 10) || 1;
     input.value = Math.min(99, Math.max(1, current + delta));
     updateCaldoPricePreview();
+    updatePratoPricePreview();
 };
 
 function getOptionQty() {
@@ -1393,13 +1490,16 @@ els.btnConfirmOptions.onclick = () => {
         const local = document.getElementById('prato-local').value;
 
         const retiradas = Array.from(document.querySelectorAll('input[name="prato-retira"]:checked')).map(cb => cb.value);
+        const additions = Array.from(document.querySelectorAll('input[name="prato-adicional"]:checked')).map(cb => cb.value);
         const retiStr = retiradas.length > 0 ? `[TIRAR: ${retiradas.join(', ')}]` : '[COMPLETO]';
+        const additionsStr = additions.length > 0 ? ` [ADICIONAIS: ${additions.join(', ')}]` : '';
 
-        let preco = product.name.includes("Picanha") ? 35.00 : 25.00;
-        let nName = `${product.name} + ${arroz} ${retiStr} - ${local}`;
+        let preco = Number(product.price) + (additions.length * 3);
+        let nName = `${product.name} + ${arroz} ${retiStr}${additionsStr} - ${local}`;
         commitAddToCart(product, nName, preco, getOptionQty(), {
             doneness: document.getElementById('picanha-point') ? document.getElementById('picanha-point').value : '',
-            note: document.getElementById('prato-note').value.trim()
+            note: document.getElementById('prato-note').value.trim(),
+            additions
         });
     }
 
@@ -1417,7 +1517,7 @@ function commitAddToCart(baseProduct, finalName, finalPrice, quantity = 1, itemD
 
     if (pendingEditIndex !== null && currentOrder.items[pendingEditIndex]) {
         const previous = currentOrder.items[pendingEditIndex];
-        currentOrder.items[pendingEditIndex] = { ...previous, product: productCopy, qty: quantity, consumption: newConsumption, doneness: itemDetails.doneness || '', note: itemDetails.note || '' };
+        currentOrder.items[pendingEditIndex] = { ...previous, product: productCopy, qty: quantity, consumption: newConsumption, doneness: itemDetails.doneness || '', note: itemDetails.note || '', additions: itemDetails.additions || [] };
         updateCartIcon();
         renderCartModalItems();
         return;
@@ -1440,7 +1540,8 @@ function commitAddToCart(baseProduct, finalName, finalPrice, quantity = 1, itemD
             queuedAt: null,
             consumption: newConsumption,
             doneness: itemDetails.doneness || '',
-            note: itemDetails.note || ''
+            note: itemDetails.note || '',
+            additions: itemDetails.additions || []
         });
     }
     updateCartIcon();
@@ -1519,6 +1620,8 @@ function setupEventListeners() {
     document.getElementById('close-quick-order-modal-x').onclick = () => els.quickOrderModal.classList.add('hidden');
     document.getElementById('close-new-order-modal-x').onclick = () => els.newOrderModal.classList.add('hidden');
     els.btnCreateOrder.onclick = createNewOrder;
+    els.closeEditCustomer.onclick = closeEditCustomerModal;
+    els.saveEditCustomer.onclick = saveEditCustomerData;
 
     els.backToOrdersBtn.onclick = () => {
         els.screenMenu.classList.remove('view-active');
@@ -1593,9 +1696,11 @@ function setupEventListeners() {
     };
 
     setupDialogBehavior(els.newOrderModal, [els.newOrderClient, els.newOrderFeature, els.newOrderPriority], createNewOrder);
+    setupDialogBehavior(els.editCustomerModal, [els.editCustomerName, els.editCustomerFeature, els.editCustomerPriority], saveEditCustomerData);
     setupDialogBehavior(els.optionsModal, [], () => els.btnConfirmOptions.click());
     setupOutsideClose(els.newOrderModal, () => els.newOrderModal.classList.add('hidden'));
     setupOutsideClose(els.quickOrderModal, () => els.quickOrderModal.classList.add('hidden'));
+    setupOutsideClose(els.editCustomerModal, closeEditCustomerModal);
     setupOutsideClose(els.optionsModal, () => {
         els.optionsModal.classList.add('hidden');
         pendingProductId = null;
