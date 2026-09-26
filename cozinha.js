@@ -12,6 +12,7 @@ const els = {
     pratosProntoContainer: document.getElementById('pratos-pronto-container'),
     entreguesContainer: document.getElementById('entregues-container'),
     chapeiroContainer: document.getElementById('chapeiro-container'),
+    fritadeiraContainer: document.getElementById('fritadeira-container'),
     status: document.getElementById('status'),
     emptyState: document.getElementById('empty-state'),
     kitchenSearch: document.getElementById('kitchen-search'),
@@ -21,6 +22,7 @@ const els = {
     countPratosTotal: document.getElementById('count-pratos-total'),
     countEntregues: document.getElementById('kitchen-count-entregues'),
     countChapeiro: document.getElementById('kitchen-count-chapeiro'),
+    countFritadeira: document.getElementById('kitchen-count-fritadeira'),
     queueMetrics: document.getElementById('queue-metrics'),
     kitchenHistoryBar: document.getElementById('kitchen-history-bar'),
     kitchenTotalEntreguesVal: document.getElementById('kitchen-total-entregues-val'),
@@ -606,6 +608,7 @@ function updateKitchenCounters() {
     let countPedidosAtivos = 0;
     let countEntregues = 0;
     let countChapeiro = 0;
+    let countFritadeira = 0;
 
     Object.values(globalOrders).forEach(pedido => {
         const items = pedido.items || [];
@@ -617,12 +620,14 @@ function updateKitchenCounters() {
         const isEntregue = pedido.items.every(i => i.status === 'entregue') || pedido.deliveredAt;
         if (isEntregue) countEntregues++;
         if (items.some(i => ['fila', 'em_preparo'].includes(i.status || 'fila') && isChapaItem(i))) countChapeiro++;
+        if (items.some(i => ['fila', 'em_preparo'].includes(i.status || 'fila') && isFryerItem(i))) countFritadeira++;
     });
 
     Object.entries(counts).forEach(([key, value]) => { if (els[`count${key[0].toUpperCase()}${key.slice(1)}`]) els[`count${key[0].toUpperCase()}${key.slice(1)}`].textContent = value; });
     if (els.countPratosTotal) els.countPratosTotal.textContent = countPedidosAtivos;
     if (els.countEntregues) els.countEntregues.textContent = countEntregues;
     if (els.countChapeiro) els.countChapeiro.textContent = countChapeiro;
+    if (els.countFritadeira) els.countFritadeira.textContent = countFritadeira;
     if (els.kitchenTotalEntreguesVal) els.kitchenTotalEntreguesVal.textContent = countEntregues;
     const deliveredOrders = Object.values(globalOrders).filter(order => isFullyDelivered(order));
     const today = new Date().toLocaleDateString('en-CA');
@@ -636,14 +641,18 @@ function updateKitchenCounters() {
     if (todayEl) todayEl.textContent = deliveredToday.length;
     if (itemsEl) itemsEl.textContent = deliveredUnits;
     if (averageEl) averageEl.textContent = `${averageMinutes} min`;
-    const plateTotals = { carne: 0, picanha: 0, misto: 0 };
-    const riceTotals = { carne: new Map(), picanha: new Map(), misto: new Map() };
+    const plateTotals = { carne: 0, picanha: 0, misto: 0, frango: 0, tambaqui: 0 };
+    const riceTotals = { carne: new Map(), picanha: new Map(), misto: new Map(), frango: new Map(), tambaqui: new Map() };
     const brothTotals = new Map(['Carne', 'Quenga', 'Camarão', 'Frango'].map(name => [name, { withAcc: 0, withoutAcc: 0 }]));
     deliveredOrders.forEach(order => (order.items || []).forEach(item => {
         const rawName = item.product && item.product.name || '';
         const qty = Number(item.qty) || 1;
         const normalized = rawName.toLowerCase();
-        const plateType = normalized.includes('carne de sol na chapa') ? 'carne' : normalized.includes('picanha na chapa') ? 'picanha' : normalized.includes('misto na chapa') ? 'misto' : null;
+        const plateType = normalized.includes('carne de sol na chapa') ? 'carne'
+            : normalized.includes('picanha na chapa') ? 'picanha'
+                : normalized.includes('misto na chapa') ? 'misto'
+                    : normalized.includes('filé de frango frito') ? 'frango'
+                        : normalized.includes('filé de tambaqui frito') ? 'tambaqui' : null;
         if (plateType) {
             plateTotals[plateType] += qty;
             const riceMatch = rawName.match(/\+\s*(.+?)\s*\[(?:TIRAR:|COMPLETO)/i);
@@ -671,6 +680,8 @@ function updateKitchenCounters() {
         <div class="delivered-item-card delivered-item-group"><div><span>Carne de Sol na Chapa</span><strong>${plateTotals.carne}</strong></div><small>Arroz por tipo</small>${riceRows('carne')}</div>
         <div class="delivered-item-card delivered-item-group"><div><span>Picanha na Chapa</span><strong>${plateTotals.picanha}</strong></div><small>Arroz por tipo</small>${riceRows('picanha')}</div>
         <div class="delivered-item-card delivered-item-group"><div><span>Misto na Chapa</span><strong>${plateTotals.misto}</strong></div><small>Arroz por tipo</small>${riceRows('misto')}</div>
+        <div class="delivered-item-card delivered-item-group"><div><span>Filé de Frango Frito</span><strong>${plateTotals.frango}</strong></div><small>Arroz por tipo</small>${riceRows('frango')}</div>
+        <div class="delivered-item-card delivered-item-group"><div><span>Filé de Tambaqui Frito</span><strong>${plateTotals.tambaqui}</strong></div><small>Arroz por tipo</small>${riceRows('tambaqui')}</div>
         ${brothRows.map(([name, totals]) => `<div class="delivered-item-card delivered-item-group"><div><span>Caldo de ${escapeKitchenHtml(name)}</span><strong>${totals.withAcc + totals.withoutAcc}</strong></div><small>Acompanhamento</small><span><em>Com acompanhamento</em><b>${totals.withAcc}</b></span><span><em>Sem acompanhamento</em><b>${totals.withoutAcc}</b></span></div>`).join('')}
     `;
     renderTimeIntelligence(deliveredOrders);
@@ -777,13 +788,19 @@ function isCaldoItem(item) {
     return name.startsWith('caldo ');
 }
 
+function isFryerItem(item) {
+    const name = item && item.product && item.product.name ? item.product.name.toLowerCase() : '';
+    return name.includes('filé de frango frito') || name.includes('filé de tambaqui frito');
+}
+
 function renderQueueMetrics() {
     if (!els.queueMetrics) return;
     if (currentTab === 'entregues') { els.queueMetrics.innerHTML = ''; return; }
-    const lane = currentTab === 'pratos' || currentTab.startsWith('pratos-') ? 'todos' : currentTab === 'chapeiro' ? 'pratos' : null;
+    const lane = currentTab === 'pratos' || currentTab.startsWith('pratos-') ? 'todos' : currentTab === 'chapeiro' ? 'pratos' : currentTab === 'fritadeira' ? 'fritadeira' : null;
     const stage = currentTab.endsWith('-preparo') ? 'em_preparo' : currentTab.endsWith('-pronto') ? 'pronto' : null;
     const totals = new Map();
-    const chapeiroTotals = { carne: 0, picanha: 0 };
+    const chapeiroTotals = { carne: 0, misto: 0, picanha: 0 };
+    const fryerTotals = { frango: 0, tambaqui: 0 };
     let pendingUnits = 0;
     let pendingOrders = 0;
     let oldestQueueTime = null;
@@ -791,17 +808,23 @@ function renderQueueMetrics() {
         let orderHasPending = false;
         (order.items || []).forEach(item => {
             const itemStatus = item.status || 'fila';
-            if (currentTab === 'chapeiro' ? !['fila', 'em_preparo'].includes(itemStatus) : stage && itemStatus !== stage) return;
-            if (!stage && currentTab !== 'chapeiro' && !['fila', 'em_preparo', 'pronto'].includes(itemStatus)) return;
+            if (['chapeiro', 'fritadeira'].includes(currentTab) ? !['fila', 'em_preparo'].includes(itemStatus) : stage && itemStatus !== stage) return;
+            if (!stage && !['chapeiro', 'fritadeira'].includes(currentTab) && !['fila', 'em_preparo', 'pronto'].includes(itemStatus)) return;
             if (lane === 'pratos' && !isChapaItem(item)) return;
+            if (lane === 'fritadeira' && !isFryerItem(item)) return;
             orderHasPending = true;
             pendingUnits += Number(item.qty) || 1;
             const queuedAt = getOrderQueueTime(order);
             if (queuedAt > 0 && (oldestQueueTime === null || queuedAt < oldestQueueTime)) oldestQueueTime = queuedAt;
             const fullName = item.product && item.product.name ? item.product.name : 'Item sem nome';
             if (currentTab === 'chapeiro') {
-                const chapaKey = fullName.toLowerCase().includes('picanha') ? 'picanha' : 'carne';
+                const normalizedName = fullName.toLowerCase();
+                const chapaKey = normalizedName.includes('picanha') ? 'picanha' : normalizedName.includes('misto') ? 'misto' : 'carne';
                 chapeiroTotals[chapaKey] += Number(item.qty) || 1;
+            }
+            if (currentTab === 'fritadeira') {
+                const fryerKey = fullName.toLowerCase().includes('tambaqui') ? 'tambaqui' : 'frango';
+                fryerTotals[fryerKey] += Number(item.qty) || 1;
             }
             const baseName = fullName.split(' + ')[0].split(' (')[0].split(' - ')[0];
             totals.set(baseName, (totals.get(baseName) || 0) + (Number(item.qty) || 1));
@@ -812,7 +835,15 @@ function renderQueueMetrics() {
     if (currentTab === 'chapeiro') {
         els.queueMetrics.innerHTML = `
             <div class="queue-metric-card"><span>Carnes na Chapa</span><strong>${chapeiroTotals.carne}</strong></div>
+            <div class="queue-metric-card"><span>Mistos na Chapa</span><strong>${chapeiroTotals.misto}</strong></div>
             <div class="queue-metric-card"><span>Picanhas na Chapa</span><strong>${chapeiroTotals.picanha}</strong></div>
+        `;
+        return;
+    }
+    if (currentTab === 'fritadeira') {
+        els.queueMetrics.innerHTML = `
+            <div class="queue-metric-card"><span>Filés de Frango</span><strong>${fryerTotals.frango}</strong></div>
+            <div class="queue-metric-card"><span>Filés de Tambaqui</span><strong>${fryerTotals.tambaqui}</strong></div>
         `;
         return;
     }
@@ -941,7 +972,7 @@ function renderAll() {
     renderQueueMetrics();
 
     const containers = [els.pratosFilaContainer, els.pratosPreparoContainer, els.pratosProntoContainer,
-        els.entreguesContainer, els.chapeiroContainer];
+        els.entreguesContainer, els.chapeiroContainer, els.fritadeiraContainer];
     containers.forEach(container => { if (container) container.innerHTML = ''; });
 
     const query = kitchenSearchQuery;
@@ -961,6 +992,7 @@ function renderAll() {
         const pratosFila = [], pratosPreparo = [], pratosPronto = [];
         const entregueItems = [];
         const chapaItems = [];
+        const fryerItems = [];
         pedido.items.forEach(item => {
             const st = item.status || 'fila';
             if (st === 'fila') pratosFila.push(item);
@@ -969,6 +1001,7 @@ function renderAll() {
             if (isChapaItem(item)) {
                 if (['fila', 'em_preparo'].includes(st)) chapaItems.push(item);
             }
+            if (isFryerItem(item) && ['fila', 'em_preparo'].includes(st)) fryerItems.push(item);
             if (st === 'entregue') entregueItems.push(item);
         });
 
@@ -977,11 +1010,12 @@ function renderAll() {
         if (pratosPronto.length) renderCard(pedido, pratosPronto, 'pratos-pronto', els.pratosProntoContainer);
         if (entregueItems.length > 0 || pedido.deliveredAt) renderCard(pedido, entregueItems.length > 0 ? entregueItems : pedido.items, 'entregues', els.entreguesContainer);
         if (chapaItems.length > 0) renderCard(pedido, chapaItems, 'chapeiro', els.chapeiroContainer);
+        if (fryerItems.length > 0) renderCard(pedido, fryerItems, 'fritadeira', els.fritadeiraContainer);
     });
 
     const visibleContainers = currentTab === 'pratos'
         ? [els.pratosFilaContainer, els.pratosPreparoContainer, els.pratosProntoContainer]
-        : currentTab === 'chapeiro' ? [els.chapeiroContainer] : [els.entreguesContainer];
+        : currentTab === 'chapeiro' ? [els.chapeiroContainer] : currentTab === 'fritadeira' ? [els.fritadeiraContainer] : [els.entreguesContainer];
     els.emptyState.classList.toggle('hidden', visibleContainers.some(container => container && container.children.length > 0));
 }
 
@@ -1235,7 +1269,8 @@ function renderCard(pedido, itemsArr, tabType, containerTarget) {
                 <button type="button" class="save-kitchen-note-btn">Salvar anotação</button>
             </div>
         </div>
-        ${tabType === 'chapeiro' ? `<div class="chapeiro-readonly-hint">👁️ Visualização operacional — a finalização é feita no painel da cozinha.</div>` : ''}
+        ${['chapeiro', 'fritadeira'].includes(tabType) ? `<div class="chapeiro-readonly-hint">👁️ Visualização operacional — a finalização é feita no painel da cozinha.</div>` : ''}
+        <button type="button" class="edit-customer-kitchen-btn">👤 Editar dados do cliente</button>
         ${isQueue ? `<div class="order-footer"><div class="order-footer-actions five-actions"><button class="edit-order-btn icon-action-btn" title="Editar pedido" aria-label="Editar pedido">✏️</button><button class="start-prep-btn icon-action-btn" title="Iniciar preparo" aria-label="Iniciar preparo">▶️</button><button class="mark-ready-btn icon-action-btn" title="Marcar como pronto" aria-label="Marcar como pronto">✅</button><button class="deliver-lane-btn icon-action-btn" title="Entregar pedido" aria-label="Entregar pedido">📦</button><button class="delete-kitchen-order-btn icon-action-btn" title="Excluir pedido definitivamente" aria-label="Excluir pedido definitivamente">🗑️</button></div></div>` : ''}
         ${isPrep ? `<div class="order-footer"><div class="order-footer-actions five-actions"><button class="edit-order-btn icon-action-btn" title="Editar pedido" aria-label="Editar pedido">✏️</button><button class="regress-status-btn icon-action-btn" title="Voltar pedido para a fila" aria-label="Voltar pedido para a fila">↩️</button><button class="mark-ready-btn icon-action-btn" title="Marcar como pronto" aria-label="Marcar como pronto">✅</button><button class="deliver-lane-btn icon-action-btn" title="Entregar pedido" aria-label="Entregar pedido">📦</button><button class="delete-kitchen-order-btn icon-action-btn" title="Excluir pedido definitivamente" aria-label="Excluir pedido definitivamente">🗑️</button></div></div>` : ''}
         ${isReady ? `<div class="order-footer"><div class="order-footer-actions four-actions"><button class="edit-order-btn icon-action-btn" title="Editar pedido" aria-label="Editar pedido">✏️</button><button class="regress-status-btn icon-action-btn" title="Voltar pedido para em preparo" aria-label="Voltar pedido para em preparo">↩️</button><button class="deliver-lane-btn icon-action-btn" title="Confirmar entrega" aria-label="Confirmar entrega">📦</button><button class="delete-kitchen-order-btn icon-action-btn" title="Excluir pedido definitivamente" aria-label="Excluir pedido definitivamente">🗑️</button></div></div>` : ''}
@@ -1272,6 +1307,8 @@ function renderCard(pedido, itemsArr, tabType, containerTarget) {
 
     const editButton = card.querySelector('.edit-order-btn');
     if (editButton) editButton.onclick = () => openEditOrder(pedido);
+    const editCustomerButton = card.querySelector('.edit-customer-kitchen-btn');
+    if (editCustomerButton) editCustomerButton.onclick = () => openEditOrder(pedido);
     const deleteButton = card.querySelector('.delete-kitchen-order-btn');
     if (deleteButton) deleteButton.onclick = () => deleteOrderPermanently(pedido);
     card.querySelectorAll('.item-ready-btn').forEach((button, index) => {
@@ -1334,7 +1371,7 @@ function renderKitchenItem(item, allowReadyAction = false) {
     const doneness = item.doneness ? `<span class="prep-block item-doneness"><b>Ponto da picanha</b><span>🔥 ${escapeKitchenHtml(item.doneness)}</span></span>` : '';
     const itemNote = item.note ? `<span class="prep-block individual-item-note"><b>Observação do prato</b><span>📝 ${escapeKitchenHtml(item.note)}</span></span>` : '';
 
-    if (name.includes(' na Chapa + ')) {
+    if (item.product && item.product.dynamic === 'prato' && name.includes(' + ')) {
         const baseName = name.split(' + ')[0];
         const riceMatch = name.match(/\+\s(.+?)\s\[(?:TIRAR:|COMPLETO)/);
         const removeMatch = name.match(/\[TIRAR:\s*([^\]]+)\]/);
@@ -1343,7 +1380,9 @@ function renderKitchenItem(item, allowReadyAction = false) {
         const additions = Array.isArray(item.additions) ? item.additions : additionsMatch ? additionsMatch[1].split(',').map(value => value.trim()) : [];
         const defaults = baseName.includes('Picanha')
             ? ['Tropeiro', 'Salada', 'Vinagrete', 'Farofa', 'Macaxeira', 'Maionese', 'Batata Palha', 'Vatapá']
-            : ['Tropeiro', 'Salada', 'Vinagrete', 'Farofa', 'Macaxeira', 'Vatapá'];
+            : baseName.includes('Tambaqui')
+                ? ['Vinagrete', 'Banana Frita', 'Farofa']
+                : ['Tropeiro', 'Salada', 'Vinagrete', 'Farofa', 'Macaxeira', 'Vatapá'];
         const mounted = defaults.filter(value => !removed.includes(value));
         const preparation = removed.length
             ? `<span class="prep-block prep-remove"><b>Retirar</b><span>${removed.join(' • ')}</span></span>

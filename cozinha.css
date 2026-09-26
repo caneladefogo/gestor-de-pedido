@@ -1640,6 +1640,45 @@ body { background: #f8f7f5 !important; color: #261f21; }
     }
 }
 
+/* Legibilidade operacional do painel */
+.kitchen-controls .tab-btn { font-size: 1rem !important; }
+.queue-metric-card span { font-size: 1rem !important; }
+.queue-metric-card strong { font-size: 1.5rem !important; }
+.order-card .order-header h3 { font-size: 2rem !important; }
+.order-card .order-header > div:nth-child(2) { font-size: 1.4rem !important; }
+.order-card .order-time,
+.order-card .order-header > div:nth-child(3),
+.kitchen-order-total { font-size: 1rem !important; }
+.order-card .item-qty { font-size: 1.45rem !important; }
+.order-card .item-name { font-size: 1.15rem !important; line-height: 1.4; }
+.order-card .prep-block b { font-size: .9rem !important; }
+.order-card .prep-block span,
+.order-card .prep-location { font-size: 1rem !important; }
+.edit-customer-kitchen-btn {
+    display: block;
+    width: calc(100% - 2rem);
+    min-height: 42px;
+    margin: 0 1rem 1rem;
+    padding: .65rem 1rem;
+    border: 1px solid #5b4a4e;
+    border-radius: 10px;
+    background: #302a2c;
+    color: #fff;
+    font-size: .95rem;
+    font-weight: 800;
+    cursor: pointer;
+}
+.edit-customer-kitchen-btn:hover { background: #403639; }
+.timer-title { font-size: .84rem !important; }
+.timer-value { font-size: 1.2rem !important; }
+
+@media (max-width: 720px) {
+    .kitchen-controls .tab-btn { font-size: .95rem !important; }
+    .order-card .item-name { font-size: 1.08rem !important; }
+    .order-card .prep-block span,
+    .order-card .prep-location { font-size: .95rem !important; }
+}
+
 /* Movimento e feedback — curto para preservar a velocidade operacional */
 body { transition: opacity .18s ease, transform .18s ease; }
 body.page-leaving { opacity: 0; transform: translateY(4px); pointer-events: none; }

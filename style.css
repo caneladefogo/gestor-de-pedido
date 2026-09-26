@@ -1544,6 +1544,21 @@ input[type="checkbox"] {
     font-weight: 800;
     cursor: pointer;
 }
+.edit-current-customer-btn {
+    min-height: 42px;
+    padding: .65rem 1rem;
+    border: 0;
+    border-radius: 10px;
+    background: #e9e2df;
+    color: #5b1117;
+    font-size: .9rem;
+    font-weight: 800;
+    cursor: pointer;
+    white-space: nowrap;
+}
+@media (max-width: 720px) {
+    .edit-current-customer-btn { width: 100%; order: 3; }
+}
 .waiter-item-delivery-check {
     display: flex;
     align-items: center;

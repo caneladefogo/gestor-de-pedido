@@ -3,6 +3,8 @@ const DB = {
         { id: 1, name: "Carne de Sol na Chapa", desc: "Montar Prato", price: 25.00, dynamic: "prato", category: "Pratos" },
         { id: 19, name: "Misto na Chapa", desc: "Montar Prato", price: 25.00, dynamic: "prato", category: "Pratos" },
         { id: 2, name: "Picanha na Chapa", desc: "Montar Prato", price: 35.00, dynamic: "prato", category: "Pratos" },
+        { id: 20, name: "Filé de Frango Frito", desc: "Montar Prato", price: 25.00, dynamic: "prato", category: "Pratos" },
+        { id: 21, name: "Filé de Tambaqui Frito", desc: "Montar Prato", price: 35.00, dynamic: "prato", category: "Pratos" },
 
         { id: 3, name: "Caldo", desc: "Montar Caldo", price: 0.00, dynamic: "caldo", category: "Caldos" },
 
@@ -15,11 +17,10 @@ const DB = {
         { id: 10, name: "Fanta Laranja 1L", desc: "1 Litro", price: 12.00, category: "Refrigerantes" },
         { id: 11, name: "Baré 1L", desc: "1 Litro", price: 12.00, category: "Refrigerantes" },
 
-        { id: 13, name: "Suco de Acerola", desc: "350ml", price: 10.00, category: "Sucos" },
-        { id: 14, name: "Suco de Maracujá", desc: "350ml", price: 10.00, category: "Sucos" },
+        { id: 13, name: "Suco de Acerola", desc: "350ml", price: 8.00, category: "Sucos" },
+        { id: 14, name: "Suco de Maracujá", desc: "350ml", price: 8.00, category: "Sucos" },
 
-        { id: 15, name: "Água Mineral", desc: "", price: 6.00, category: "Outras Bebidas" },
-        { id: 18, name: "Panqueca", desc: "Montar Panqueca", price: 25.00, dynamic: "panqueca", category: "Pratos" }
+        { id: 15, name: "Água Mineral", desc: "", price: 6.00, category: "Outras Bebidas" }
     ]
 };
 
@@ -565,6 +566,7 @@ const els = {
     backToOrdersBtn: document.getElementById('back-to-orders'),
     menuOrderTitle: document.getElementById('menu-order-title'),
     menuRunningTotal: document.getElementById('menu-running-total'),
+    editCurrentCustomerBtn: document.getElementById('edit-current-customer-btn'),
 
     cartBar: document.getElementById('cart-bar'),
     cartCount: document.getElementById('cart-count'),
@@ -737,12 +739,12 @@ function getWaiterEstimateMinutes(order) {
     const deadline = Number(order.estimatedReadyAt || 0);
     if (deadline > start) return Math.max(1, Math.round((deadline - start) / 60000));
     const pendingItems = (order.items || []).filter(item => ['fila', 'em_preparo'].includes(item.status || 'fila'));
-    const hasPlate = pendingItems.some(item => /Carne de Sol na Chapa|Picanha na Chapa|Misto na Chapa/.test(item.product && item.product.name || ''));
+    const hasPlate = pendingItems.some(item => /Carne de Sol na Chapa|Picanha na Chapa|Misto na Chapa|Filé de (?:Frango|Tambaqui) Frito/.test(item.product && item.product.name || ''));
     const hasBroth = pendingItems.some(item => (item.product && item.product.name || '').startsWith('Caldo '));
     let plateEstimate = Math.max(0, ...pendingItems.map(item => {
         const name = item.product && item.product.name || '';
         if (name.includes('Picanha na Chapa')) return 12;
-        if (name.includes('Carne de Sol na Chapa') || name.includes('Misto na Chapa')) return 10;
+        if (name.includes('Carne de Sol na Chapa') || name.includes('Misto na Chapa') || name.includes('Filé de Frango Frito') || name.includes('Filé de Tambaqui Frito')) return 10;
         return 0;
     }));
     let brothEstimate = hasBroth ? 8 : 0;
@@ -755,7 +757,7 @@ function getWaiterEstimateMinutes(order) {
         const name = item.product && item.product.name || '';
         const qty = Math.max(1, Number(item.qty) || 1);
         if (hasPlate && name.includes('Picanha na Chapa')) plateEstimate += qty * 6;
-        else if (hasPlate && (name.includes('Carne de Sol na Chapa') || name.includes('Misto na Chapa'))) plateEstimate += qty * 4;
+        else if (hasPlate && (name.includes('Carne de Sol na Chapa') || name.includes('Misto na Chapa') || name.includes('Filé de Frango Frito') || name.includes('Filé de Tambaqui Frito'))) plateEstimate += qty * 4;
         if (hasBroth && name.startsWith('Caldo ')) brothEstimate += qty * 3;
     }));
     return Math.max(plateEstimate, brothEstimate, 1);
@@ -882,7 +884,7 @@ function renderActiveOrders() {
         const detailItemsHTML = order.items.map(item => {
             item.id ||= `item_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
             const itemName = item.product && item.product.name || 'Item';
-            const showsConsumption = itemName.includes(' na Chapa + ') || itemName.startsWith('Caldo ') || itemName.startsWith('Panqueca de ');
+            const showsConsumption = (item.product && item.product.dynamic === 'prato') || itemName.startsWith('Caldo ') || itemName.startsWith('Panqueca de ');
             const itemConsumption = item.consumption === 'levar' || itemName.includes('Para Levar')
                 ? '🛍️ Para levar' : '🍽️ Comer no local';
             const itemDetails = [item.doneness ? `🔥 Ponto: ${escapeHtml(item.doneness)}` : '', item.note ? `📝 ${escapeHtml(item.note)}` : ''].filter(Boolean).join('<br>');
@@ -1054,15 +1056,26 @@ function closeEditCustomerModal() {
 }
 
 function saveEditCustomerData() {
-    const order = globalActiveOrders[editingCustomerOrderId];
+    const storedOrder = globalActiveOrders[editingCustomerOrderId];
+    const order = storedOrder || (currentOrder && currentOrder.id === editingCustomerOrderId ? currentOrder : null);
     if (!order) return closeEditCustomerModal();
     order.clientName = els.editCustomerName.value.trim() || order.clientName || 'Cliente';
     order.feature = els.editCustomerFeature.value.trim();
     order.priority = els.editCustomerPriority.value || 'normal';
     order.updatedAt = Date.now();
-    globalActiveOrders[order.id] = order;
-    saveStoredOrders();
-    publishMQTT({ type: 'ORDER_UPDATE', order });
+    if (currentOrder && currentOrder.id === order.id) {
+        currentOrder.clientName = order.clientName;
+        currentOrder.feature = order.feature;
+        currentOrder.priority = order.priority;
+        els.menuOrderTitle.textContent = currentOrder.senha
+            ? `Pedido #${currentOrder.senha} - ${currentOrder.clientName}`
+            : `Novo Pedido - ${currentOrder.clientName}`;
+    }
+    if (storedOrder) {
+        globalActiveOrders[order.id] = order;
+        saveStoredOrders();
+        publishMQTT({ type: 'ORDER_UPDATE', order });
+    }
     closeEditCustomerModal();
     renderActiveOrders();
 }
@@ -1076,7 +1089,7 @@ function openOrderDetailModal(order) {
     let itemsHTML = '';
     order.items.forEach(item => {
         const itemName = item.product && item.product.name || 'Item';
-        const showsConsumption = itemName.includes(' na Chapa + ') || itemName.startsWith('Caldo ') || itemName.startsWith('Panqueca de ');
+        const showsConsumption = (item.product && item.product.dynamic === 'prato') || itemName.startsWith('Caldo ') || itemName.startsWith('Panqueca de ');
         const consumption = item.consumption === 'levar' || itemName.includes('Para Levar')
             ? '🛍️ Para levar' : '🍽️ Comer no local';
         const statusLabels = { fila: 'Na fila', em_preparo: 'Em preparo', pronto: 'Pronto', entregue: 'Entregue' };
@@ -1126,6 +1139,7 @@ function openExistingOrder(orderObj) {
     };
 
     els.menuOrderTitle.textContent = `Pedido #${currentOrder.senha} - ${currentOrder.clientName}`;
+    els.editCurrentCustomerBtn.classList.remove('hidden');
     els.cartNotes.value = currentOrder.obs || "";
 
     els.activeOrdersScreen.classList.remove('view-active');
@@ -1196,6 +1210,7 @@ function createNewOrder() {
 
     els.newOrderModal.classList.add('hidden');
     els.menuOrderTitle.textContent = `Novo Pedido - ${client}`;
+    els.editCurrentCustomerBtn.classList.remove('hidden');
     els.cartNotes.value = "";
 
     els.activeOrdersScreen.classList.remove('view-active');
@@ -1217,6 +1232,7 @@ function createQuickOrder() {
         quickMode: true
     };
     els.menuOrderTitle.textContent = '⚡ Pedido Rápido';
+    els.editCurrentCustomerBtn.classList.add('hidden');
     els.cartNotes.value = '';
     els.activeOrdersScreen.classList.remove('view-active');
     els.screenMenu.classList.add('view-active');
@@ -1315,7 +1331,9 @@ window.openProductOptions = function (productId, editIndex = null) {
 
         let extras = product.name.includes("Picanha")
             ? ["Tropeiro", "Salada", "Vinagrete", "Farofa", "Macaxeira", "Maionese", "Batata Palha", "Vatapá"]
-            : ["Tropeiro", "Salada", "Vinagrete", "Farofa", "Macaxeira", "Vatapá"];
+            : product.name.includes("Tambaqui")
+                ? ["Vinagrete", "Banana Frita", "Farofa"]
+                : ["Tropeiro", "Salada", "Vinagrete", "Farofa", "Macaxeira", "Vatapá"];
 
         let extrasHTML = extras.map(e => `<label class="option-checkbox"><input type="checkbox" name="prato-retira" value="${e}"><span>${e}</span></label>`).join('');
         const additionsHTML = ['Banana Frita', 'Maionese', 'Batata Palha', 'Purê de Batata']
@@ -1622,6 +1640,9 @@ function setupEventListeners() {
     els.btnCreateOrder.onclick = createNewOrder;
     els.closeEditCustomer.onclick = closeEditCustomerModal;
     els.saveEditCustomer.onclick = saveEditCustomerData;
+    els.editCurrentCustomerBtn.onclick = () => {
+        if (currentOrder && !currentOrder.quickMode) openEditCustomerModal(currentOrder);
+    };
 
     els.backToOrdersBtn.onclick = () => {
         els.screenMenu.classList.remove('view-active');

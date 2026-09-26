@@ -6,7 +6,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
     <title>Painel da Cozinha - Canela de Fogo</title>
     <link rel="icon" type="image/png" href="logo.png">
-    <link rel="stylesheet" href="cozinha.css?v=20260912-3">
+    <link rel="stylesheet" href="cozinha.css?v=20260926-3">
     <script src="assets/js/mqtt-4.3.7.min.js?v=20260823-1"></script>
 </head>
 
@@ -83,7 +83,7 @@
             </div>
             <div class="edit-order-fields">
                 <label>Cliente<input id="edit-order-client" type="text"></label>
-                <label>Identificação / mesa<input id="edit-order-feature" type="text"></label>
+                <label>Características / mesa<input id="edit-order-feature" type="text"></label>
                 <label>Prioridade<select id="edit-order-priority">
                     <option value="normal">Normal</option>
                     <option value="idoso60">Idoso 60+</option>
@@ -130,6 +130,9 @@
             <button id="tab-chapeiro" class="tab-btn"
                 style="background:#444; color:white; border:none; padding:0.8rem 1rem; font-weight:bold; border-radius:8px; flex:1; min-width: 120px; cursor:pointer;"
                 onclick="switchTab('chapeiro')">Chapeiro <span id="kitchen-count-chapeiro" class="badge-pill">0</span></button>
+            <button id="tab-fritadeira" class="tab-btn"
+                style="background:#444; color:white; border:none; padding:0.8rem 1rem; font-weight:bold; border-radius:8px; flex:1; min-width: 120px; cursor:pointer;"
+                onclick="switchTab('fritadeira')">Fritadeira <span id="kitchen-count-fritadeira" class="badge-pill">0</span></button>
         </div>
 
         <div style="display: flex; gap: 0.5rem; align-items: center;">
@@ -174,13 +177,17 @@
             <!-- Itens destinados à chapa -->
         </div>
 
+        <div class="column new-orders" id="fritadeira-container" style="display:none;">
+            <!-- Itens destinados à fritadeira -->
+        </div>
+
         <div class="empty-state" id="empty-state" style="text-align: center; padding: 4rem 1rem;">
             <img src="logo.png" alt="Canela de Fogo" style="width: 140px; height: 140px; border-radius: 50%; opacity: 0.2; margin-bottom: 1.2rem; filter: drop-shadow(0 0 20px rgba(255, 187, 0, 0.4)); object-fit: cover;">
         </div>
     </main>
 
-    <script src="persistence.js?v=20260912-3"></script>
-    <script src="cozinha.js?v=20260912-3"></script>
+    <script src="persistence.js?v=20260926-3"></script>
+    <script src="cozinha.js?v=20260926-3"></script>
 </body>
 
 </html>
