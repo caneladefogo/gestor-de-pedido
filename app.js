@@ -24,6 +24,32 @@ const DB = {
     ]
 };
 
+const PRODUCT_PRICES_KEY = 'canela_product_prices';
+let productPriceSettings = loadProductPriceSettings();
+applyProductPriceSettings(productPriceSettings);
+
+function loadProductPriceSettings() {
+    try { return JSON.parse(localStorage.getItem(PRODUCT_PRICES_KEY)) || { items: {}, updatedAt: 0 }; }
+    catch (error) { return { items: {}, updatedAt: 0 }; }
+}
+
+function applyProductPriceSettings(settings) {
+    if (!settings || !settings.items) return;
+    DB.products.forEach(product => {
+        const price = Number(settings.items[product.name]);
+        if (Number.isFinite(price) && price >= 0) product.price = price;
+    });
+}
+
+function receiveProductPriceSettings(settings) {
+    if (!settings || Number(settings.updatedAt || 0) <= Number(productPriceSettings.updatedAt || 0)) return false;
+    productPriceSettings = settings;
+    localStorage.setItem(PRODUCT_PRICES_KEY, JSON.stringify(settings));
+    applyProductPriceSettings(settings);
+    if (els && els.productsContainer) renderProducts();
+    return true;
+}
+
 // --- ESTADO GLOBAL DO ATENDIMENTO ---
 let waiterName = localStorage.getItem('canela_waiter_name') || "";
 let currentOrder = null;
@@ -118,6 +144,17 @@ function deleteOrderPermanently(order) {
 
 function isFullyDelivered(order) {
     return Boolean(order && ((order.items || []).length > 0 && order.items.every(item => item.status === 'entregue') || order.deliveredAt));
+}
+
+function normalizeDeprecatedReadyStatus(order) {
+    if (!order || !Array.isArray(order.items)) return order;
+    order.items.forEach(item => {
+        if (item.status === 'em_preparo') {
+            item.status = 'pronto';
+            item.readyAt ||= Date.now();
+        }
+    });
+    return order;
 }
 
 function shouldSuppressDeliveredOrder(order) {
@@ -309,19 +346,25 @@ function initMQTT() {
 
                 if (data.type === 'REQUEST_SYNC') {
                     const list = Object.values(globalActiveOrders);
-                    publishMQTT({ type: 'SYNC_ALL_ORDERS', orders: list, historyClearedAt, deletedOrderIds });
+                    publishMQTT({ type: 'SYNC_ALL_ORDERS', orders: list, historyClearedAt, deletedOrderIds, productPriceSettings });
                     return;
                 }
 
                 if (data.type === 'SYNC_ALL_ORDERS' && Array.isArray(data.orders)) {
+                    receiveProductPriceSettings(data.productPriceSettings);
                     applyDeletedOrderMarkers(data.deletedOrderIds);
                     if (data.historyClearedAt) applyHistoryClear(data.historyClearedAt);
                     let changed = false;
                     data.orders.forEach(order => { if (processIncomingOrder(order, false)) changed = true; });
                     if (changed) {
                         saveStoredOrders();
-                        renderActiveOrders();
                     }
+                    renderActiveOrders();
+                    return;
+                }
+
+                if (data.type === 'PRODUCT_PRICE_SETTINGS' && data.settings) {
+                    receiveProductPriceSettings(data.settings);
                     return;
                 }
 
@@ -418,6 +461,7 @@ async function flushWaiterOutbox() {
 }
 
 function processIncomingOrder(orderData, notifyIfReady) {
+    normalizeDeprecatedReadyStatus(orderData);
     if (!orderData.id) {
         orderData.id = `ord_${orderData.senha}_${orderData.timestamp || Date.now()}`;
     }
@@ -438,27 +482,11 @@ function processIncomingOrder(orderData, notifyIfReady) {
     orderData = window.mergeCanelaOrders ? mergeCanelaOrders(existing, orderData) : orderData;
     const hasChanged = !existing || JSON.stringify(existing) !== JSON.stringify(orderData);
     if (!hasChanged) return false;
-    let hasNewPronto = false;
-
-    if (existing && notifyIfReady) {
-        const oldPronto = existing.items.filter(i => i.status === 'pronto').length;
-        const newPronto = orderData.items.filter(i => i.status === 'pronto').length;
-
-        const matchesWaiter = !orderData.waiterName || !waiterName || orderData.waiterName.toLowerCase() === waiterName.toLowerCase();
-        if (newPronto > oldPronto && matchesWaiter) {
-            hasNewPronto = true;
-        }
-    } else if (!existing && notifyIfReady) {
-        const prontoCount = orderData.items.filter(i => i.status === 'pronto').length;
-        const matchesWaiter = !orderData.waiterName || !waiterName || orderData.waiterName.toLowerCase() === waiterName.toLowerCase();
-        if (prontoCount > 0 && matchesWaiter) {
-            hasNewPronto = true;
-        }
-    }
-
+    const oldReadyCount = existing ? (existing.items || []).filter(item => item.status === 'pronto').length : 0;
+    const newReadyCount = (orderData.items || []).filter(item => item.status === 'pronto').length;
+    const matchesWaiter = !orderData.waiterName || !waiterName || orderData.waiterName.toLowerCase() === waiterName.toLowerCase();
     globalActiveOrders[orderData.id] = orderData;
-
-    if (hasNewPronto && notifyIfReady) {
+    if (notifyIfReady && matchesWaiter && newReadyCount > oldReadyCount) {
         startContinuousAlarm(`📣 Chame ${orderData.clientName}! Senha #${orderData.senha}. O pedido está pronto.`);
     }
     return true;
@@ -507,7 +535,7 @@ setInterval(() => {
 }, 5000);
 setInterval(() => {
     if (mqttClient && mqttClient.connected) publishMQTT({ type: 'REQUEST_SYNC' });
-}, 30000);
+}, 8000);
 
 // Auto-remove badges do Netlify injetadas
 setInterval(() => {
@@ -536,7 +564,6 @@ const els = {
     orderSearchInput: document.getElementById('order-search-input'),
 
     badgeFila: document.getElementById('badge-fila'),
-    badgePreparo: document.getElementById('badge-preparo'),
     badgePronto: document.getElementById('badge-pronto'),
     badgeEntregue: document.getElementById('badge-entregue'),
 
@@ -674,7 +701,6 @@ window.switchWaiterTab = function (tab) {
 function updateTabBadges() {
     const filterVal = els.waiterFilter ? els.waiterFilter.value : 'meus';
     let countFila = 0;
-    let countPreparo = 0;
     let countPronto = 0;
     let countEntregue = 0;
 
@@ -682,18 +708,15 @@ function updateTabBadges() {
         if (filterVal === 'meus' && order.waiterName && order.waiterName.toLowerCase() !== waiterName.toLowerCase()) return;
 
         const hasFila = order.items.some(i => (i.status || 'fila') === 'fila');
-        const hasPreparo = order.items.some(i => i.status === 'em_preparo');
         const hasPronto = order.items.some(i => i.status === 'pronto');
         const isEntregue = order.items.every(i => i.status === 'entregue') || order.deliveredAt;
 
         if (hasFila) countFila++;
-        if (hasPreparo) countPreparo++;
         if (hasPronto) countPronto++;
         if (isEntregue) countEntregue++;
     });
 
     if (els.badgeFila) els.badgeFila.textContent = countFila;
-    if (els.badgePreparo) els.badgePreparo.textContent = countPreparo;
     if (els.badgePronto) els.badgePronto.textContent = countPronto;
     if (els.badgeEntregue) els.badgeEntregue.textContent = countEntregue;
 
@@ -702,7 +725,7 @@ function updateTabBadges() {
 
 function getWaiterQueueStart(order) {
     const itemStarts = (order.items || [])
-        .filter(item => ['fila', 'em_preparo'].includes(item.status || 'fila'))
+        .filter(item => (item.status || 'fila') === 'fila')
         .map(item => Number(item.queuedAt || 0))
         .filter(value => Number.isFinite(value) && value > 0);
     const fallback = Number(order.startedAt || order.timestamp || 0);
@@ -717,7 +740,7 @@ function getWaiterPriorityRank(order) {
 
 function getWaiterQueuePosition(targetOrder) {
     const queue = Object.values(globalActiveOrders)
-        .filter(order => (order.items || []).some(item => ['fila', 'em_preparo'].includes(item.status || 'fila')))
+        .filter(order => (order.items || []).some(item => (item.status || 'fila') === 'fila'))
         .sort((a, b) => getWaiterPriorityRank(b) - getWaiterPriorityRank(a) || getWaiterQueueStart(a) - getWaiterQueueStart(b));
     const index = queue.findIndex(order => order.id === targetOrder.id);
     return index >= 0 ? index + 1 : null;
@@ -738,7 +761,7 @@ function getWaiterEstimateMinutes(order) {
     const start = getWaiterQueueStart(order);
     const deadline = Number(order.estimatedReadyAt || 0);
     if (deadline > start) return Math.max(1, Math.round((deadline - start) / 60000));
-    const pendingItems = (order.items || []).filter(item => ['fila', 'em_preparo'].includes(item.status || 'fila'));
+    const pendingItems = (order.items || []).filter(item => (item.status || 'fila') === 'fila');
     const hasPlate = pendingItems.some(item => /Carne de Sol na Chapa|Picanha na Chapa|Misto na Chapa|Filé de (?:Frango|Tambaqui) Frito/.test(item.product && item.product.name || ''));
     const hasBroth = pendingItems.some(item => (item.product && item.product.name || '').startsWith('Caldo '));
     let plateEstimate = Math.max(0, ...pendingItems.map(item => {
@@ -749,11 +772,11 @@ function getWaiterEstimateMinutes(order) {
     }));
     let brothEstimate = hasBroth ? 8 : 0;
     const queue = Object.values(globalActiveOrders)
-        .filter(candidate => (candidate.items || []).some(item => ['fila', 'em_preparo'].includes(item.status || 'fila')))
+        .filter(candidate => (candidate.items || []).some(item => (item.status || 'fila') === 'fila'))
         .sort((a, b) => getWaiterPriorityRank(b) - getWaiterPriorityRank(a) || getWaiterQueueStart(a) - getWaiterQueueStart(b));
     const targetIndex = queue.findIndex(candidate => candidate.id === order.id);
     queue.slice(0, Math.max(0, targetIndex)).forEach(candidate => (candidate.items || []).forEach(item => {
-        if (!['fila', 'em_preparo'].includes(item.status || 'fila')) return;
+        if ((item.status || 'fila') !== 'fila') return;
         const name = item.product && item.product.name || '';
         const qty = Math.max(1, Number(item.qty) || 1);
         if (hasPlate && name.includes('Picanha na Chapa')) plateEstimate += qty * 6;
@@ -775,7 +798,7 @@ function renderWaiterTimers(order) {
 }
 
 function renderWaiterStatusFlow(activeStatus) {
-    const steps = [['fila', 'Fila'], ['em_preparo', 'Em preparo'], ['pronto', 'Pronto'], ['entregue', 'Entregue']];
+    const steps = [['fila', 'Fila'], ['pronto', 'Pronto'], ['entregue', 'Entregue']];
     const activeIndex = Math.max(0, steps.findIndex(([status]) => status === activeStatus));
     return `<div class="waiter-status-flow">${steps.map(([status, label], index) => `<span class="${index < activeIndex ? 'done' : index === activeIndex ? 'active' : ''}">${label}</span>`).join('')}</div>`;
 }
@@ -835,9 +858,6 @@ function renderActiveOrders() {
         if (currentWaiterTab === 'fila') {
             validItems = order.items.filter(i => (i.status || 'fila') === 'fila');
             shouldShowInTab = validItems.length > 0;
-        } else if (currentWaiterTab === 'preparo') {
-            validItems = order.items.filter(i => i.status === 'em_preparo');
-            shouldShowInTab = validItems.length > 0;
         } else if (currentWaiterTab === 'pronto') {
             validItems = order.items.filter(i => i.status === 'pronto');
             shouldShowInTab = validItems.length > 0;
@@ -858,7 +878,7 @@ function renderActiveOrders() {
         const priorityLabels = { idoso60: '👴 Idoso 60+', idoso80: '⭐ Idoso 80+', gestante: '🤰 Gestante', pcd: '♿ PCD', autista: '♾️ Autista', colo: '👶 Criança de colo' };
         const priorityBadgeHTML = order.priority && order.priority !== 'normal'
             ? `<span class="priority-badge">${priorityLabels[order.priority] || 'Prioridade'}</span>` : '';
-        const queuePosition = ['fila', 'preparo'].includes(currentWaiterTab) ? getWaiterQueuePosition(order) : null;
+        const queuePosition = currentWaiterTab === 'fila' ? getWaiterQueuePosition(order) : null;
         const queuePositionHTML = queuePosition
             ? `<span class="waiter-queue-position">Fila: ${queuePosition}º</span>`
             : '';
@@ -878,9 +898,9 @@ function renderActiveOrders() {
             <div style="font-size:0.8rem; color:#888; margin-top:0.2rem;">Atend: <strong>${order.waiterName || 'Geral'}</strong></div>
             <div class="waiter-order-total">Total: <strong>${formatCurrency(orderTotal)}</strong></div>
         `;
-        const statusByTab = { fila: 'fila', preparo: 'em_preparo', pronto: 'pronto', entregue: 'entregue' };
+        const statusByTab = { fila: 'fila', pronto: 'pronto', entregue: 'entregue' };
         const operationalInfo = currentWaiterTab === 'entregue' ? '' : `${renderWaiterStatusFlow(statusByTab[currentWaiterTab])}${renderWaiterTimers(order)}`;
-        const detailStatusLabels = { fila: 'Na fila', em_preparo: 'Em preparo', pronto: 'Pronto', entregue: 'Entregue' };
+        const detailStatusLabels = { fila: 'Na fila', pronto: 'Pronto', entregue: 'Entregue' };
         const detailItemsHTML = order.items.map(item => {
             item.id ||= `item_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
             const itemName = item.product && item.product.name || 'Item';
@@ -900,31 +920,23 @@ function renderActiveOrders() {
         if (currentWaiterTab === 'fila') {
             div.innerHTML = headerStr + operationalInfo + `
                 <div style="margin-top:0.6rem; font-size:0.9rem; background:rgba(0,0,0,0.05); padding:0.4rem; border-radius:5px;">
-                    ⏳ <strong>${validItems.length}</strong> item(ns) na fila de preparo
-                </div>
-                <div style="margin-top:0.5rem; font-size:0.85rem; color:var(--primary-bg); font-weight:bold;">
-                    Toque para adicionar mais itens ➕
+                    ⏳ <strong>${validItems.length}</strong> item(ns) aguardando produção
                 </div>
                 ${detailsButtonHTML}
+                <button type="button" class="btn-add-order-items">➕ Adicionar itens</button>
             `;
-            div.onclick = () => openExistingOrder(order);
-        } else if (currentWaiterTab === 'preparo') {
-            div.innerHTML = headerStr + operationalInfo + `
-                <div class="waiter-state-message preparing">👨‍🍳 ${validItems.length} item(ns) em preparo</div>
-                ${detailsButtonHTML}
-            `;
+            div.querySelector('.btn-add-order-items').onclick = event => {
+                event.stopPropagation();
+                openExistingOrder(order);
+            };
         } else if (currentWaiterTab === 'pronto') {
             div.innerHTML = headerStr + operationalInfo + `
-                <div style="margin-top:0.6rem; font-size:0.95rem; color:#27ae60; font-weight:bold; background:#e8f8f5; padding:0.5rem; border-radius:6px; border:1px solid #a3e4d7;">
-                    🛎️ ${validItems.length} item(ns) pronto(s)!
-                </div>
-                <button class="btn-entregar-card" style="background:#27ae60; color:white; border:none; padding:0.7rem; border-radius:6px; width:100%; font-weight:bold; margin-top:0.6rem; cursor:pointer; font-size:1rem; box-shadow:0 2px 4px rgba(0,0,0,0.15);">
-                    CONFIRMAR ENTREGA ✅
-                </button>
+                <div class="waiter-state-message preparing">✅ ${validItems.length} item(ns) pronto(s) para entrega</div>
+                <button class="btn-entregar-card">CONFIRMAR ENTREGA ✅</button>
                 ${detailsButtonHTML}
             `;
-            div.querySelector('.btn-entregar-card').onclick = (e) => {
-                e.stopPropagation();
+            div.querySelector('.btn-entregar-card').onclick = event => {
+                event.stopPropagation();
                 deliverOrder(order);
             };
         } else {
@@ -1025,11 +1037,17 @@ function deliverOrder(order) {
 
 function setWaiterItemDelivered(order, itemId, delivered) {
     const item = (order.items || []).find(candidate => candidate.id === itemId);
-    if (!item || !['pronto', 'entregue'].includes(item.status)) return;
+    if (!item) return;
     const changedAt = Date.now();
-    item.status = delivered ? 'entregue' : 'pronto';
-    if (delivered) item.deliveredAt = changedAt;
-    else delete item.deliveredAt;
+    if (delivered) {
+        item.previousStatusBeforeDelivery = 'pronto';
+        item.status = 'entregue';
+        item.deliveredAt = changedAt;
+    } else {
+        item.status = item.previousStatusBeforeDelivery || 'pronto';
+        delete item.previousStatusBeforeDelivery;
+        delete item.deliveredAt;
+    }
     const fullyDelivered = order.items.length > 0 && order.items.every(candidate => candidate.status === 'entregue');
     if (fullyDelivered) order.deliveredAt = changedAt;
     else delete order.deliveredAt;
@@ -1092,7 +1110,7 @@ function openOrderDetailModal(order) {
         const showsConsumption = (item.product && item.product.dynamic === 'prato') || itemName.startsWith('Caldo ') || itemName.startsWith('Panqueca de ');
         const consumption = item.consumption === 'levar' || itemName.includes('Para Levar')
             ? '🛍️ Para levar' : '🍽️ Comer no local';
-        const statusLabels = { fila: 'Na fila', em_preparo: 'Em preparo', pronto: 'Pronto', entregue: 'Entregue' };
+        const statusLabels = { fila: 'Na fila', pronto: 'Pronto', entregue: 'Entregue' };
         itemsHTML += `
             <div class="waiter-detail-item">
                 <span><strong>${item.qty}x</strong> ${itemName}</span>
@@ -1628,14 +1646,7 @@ function setupEventListeners() {
         setOrderTipoConsumo('local');
         els.newOrderModal.classList.remove('hidden');
     };
-    els.btnNewQuickOrder.onclick = () => els.quickOrderModal.classList.remove('hidden');
-    els.btnStartQuickOrder.onclick = () => {
-        els.quickOrderModal.classList.add('hidden');
-        createQuickOrder();
-    };
-    els.btnCancelQuickOrder.onclick = () => els.quickOrderModal.classList.add('hidden');
     els.btnCancelNewOrder.onclick = () => els.newOrderModal.classList.add('hidden');
-    document.getElementById('close-quick-order-modal-x').onclick = () => els.quickOrderModal.classList.add('hidden');
     document.getElementById('close-new-order-modal-x').onclick = () => els.newOrderModal.classList.add('hidden');
     els.btnCreateOrder.onclick = createNewOrder;
     els.closeEditCustomer.onclick = closeEditCustomerModal;
@@ -1705,7 +1716,6 @@ function setupEventListeners() {
     }
 
     els.checkoutBtn.onclick = () => finalizeCurrentOrder(false);
-    els.quickOrderBtn.onclick = () => finalizeCurrentOrder(true);
 
     els.paymentReceived.oninput = updateChangePreview;
     els.toggleChangeBtn.onclick = () => {
@@ -1720,7 +1730,6 @@ function setupEventListeners() {
     setupDialogBehavior(els.editCustomerModal, [els.editCustomerName, els.editCustomerFeature, els.editCustomerPriority], saveEditCustomerData);
     setupDialogBehavior(els.optionsModal, [], () => els.btnConfirmOptions.click());
     setupOutsideClose(els.newOrderModal, () => els.newOrderModal.classList.add('hidden'));
-    setupOutsideClose(els.quickOrderModal, () => els.quickOrderModal.classList.add('hidden'));
     setupOutsideClose(els.editCustomerModal, closeEditCustomerModal);
     setupOutsideClose(els.optionsModal, () => {
         els.optionsModal.classList.add('hidden');
@@ -1859,7 +1868,7 @@ function openCartModal() {
     els.cartModalTableTitle.textContent = currentOrder.clientName;
     const isQuickMode = Boolean(currentOrder.quickMode);
     els.checkoutBtn.classList.toggle('hidden', isQuickMode);
-    els.quickOrderBtn.classList.toggle('hidden', !isQuickMode);
+    if (els.quickOrderBtn) els.quickOrderBtn.classList.toggle('hidden', !isQuickMode);
     els.cartModal.classList.toggle('quick-mode', isQuickMode);
     els.changePanel.classList.add('hidden');
     els.toggleChangeBtn.setAttribute('aria-expanded', 'false');

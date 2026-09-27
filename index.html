@@ -6,7 +6,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
     <title>Pedidos - Canela de Fogo</title>
     <link rel="icon" type="image/png" href="logo.png">
-    <link rel="stylesheet" href="style.css?v=20260926-5">
+    <link rel="stylesheet" href="style.css?v=20260927-4">
 </head>
 
 <body>
@@ -73,7 +73,7 @@
 
         <!-- Tela de Pedidos Ativos / Histórico -->
         <section id="active-orders-screen" class="screen">
-            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.5rem; flex-wrap: wrap; gap: 0.5rem;">
+            <div class="orders-toolbar" style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.5rem; flex-wrap: wrap; gap: 0.5rem;">
                 <div style="display:flex; align-items:center; gap: 0.5rem;">
                     <h2 style="margin:0; font-size: 1.4rem;">Pedidos</h2>
                     <select id="waiter-filter" style="padding: 0.4rem 0.6rem; border-radius: 8px; font-weight:bold; border: 1px solid #ccc;">
@@ -83,7 +83,6 @@
                 </div>
                 <button id="btn-new-order"
                     style="background: #4CAF50; color: white; border: none; padding: 0.6rem 1.2rem; border-radius: 8px; font-weight: bold; cursor: pointer; font-size: 1rem; box-shadow: 0 2px 4px rgba(0,0,0,0.2);">➕ Novo Pedido</button>
-                <button id="btn-new-quick-order" class="new-quick-order-btn">⚡ Pedido Rápido</button>
             </div>
 
             <!-- Campo de Busca Rápida -->
@@ -97,9 +96,6 @@
                 <button id="wtab-fila" class="wtab-btn"
                     style="background:var(--primary-color); color:#000; border:none; padding:0.6rem 0.4rem; font-weight:bold; border-radius:6px; flex:1; cursor:pointer; font-size:0.9rem;"
                     onclick="switchWaiterTab('fila')">Na Fila <span id="badge-fila" class="tab-badge">0</span></button>
-                <button id="wtab-preparo" class="wtab-btn"
-                    style="background:#444; color:white; border:none; padding:0.6rem 0.4rem; font-weight:bold; border-radius:6px; flex:1; cursor:pointer; font-size:0.9rem;"
-                    onclick="switchWaiterTab('preparo')">Em preparo <span id="badge-preparo" class="tab-badge">0</span></button>
                 <button id="wtab-pronto" class="wtab-btn"
                     style="background:#444; color:white; border:none; padding:0.6rem 0.4rem; font-weight:bold; border-radius:6px; flex:1; cursor:pointer; font-size:0.9rem;"
                     onclick="switchWaiterTab('pronto')">Prontos <span id="badge-pronto" class="tab-badge">0</span></button>
@@ -225,18 +221,6 @@
         </div>
     </div>
 
-    <!-- Modal exclusivo para iniciar Pedido Rápido -->
-    <div class="notification-overlay hidden" id="quick-order-modal">
-        <div class="notification-modal quick-order-create-modal">
-            <button type="button" id="close-quick-order-modal-x" class="dialog-close-x" aria-label="Fechar pedido rápido">✕</button>
-            <h2>⚡ Criar Pedido Rápido</h2>
-            <p>Use este modo para bebidas e itens que não precisam passar pela cozinha.</p>
-            <p class="quick-order-warning">O pedido será finalizado diretamente e não aparecerá no painel da cozinha.</p>
-            <button id="btn-start-quick-order" class="btn-indo quick-order-start-btn">ABRIR CARDÁPIO RÁPIDO</button>
-            <button id="btn-cancel-quick-order" class="dialog-cancel-btn">Cancelar</button>
-        </div>
-    </div>
-
     <!-- Modal do Carrinho -->
     <div class="cart-modal hidden" id="cart-modal">
         <div class="cart-modal-content">
@@ -259,7 +243,6 @@
                     <div id="change-result" class="change-result">Troco: R$ 0,00</div>
                 </div>
                 <button class="checkout-btn" id="checkout-btn" style="margin-top: 0.5rem;">Enviar Pedido para Cozinha</button>
-                <button class="checkout-btn quick-order-btn hidden" id="quick-order-btn">Finalizar Pedido Rápido</button>
             </div>
         </div>
     </div>
@@ -288,7 +271,7 @@
             <button type="button" id="close-waiter-notif-x" class="dialog-close-x" aria-label="Fechar aviso">✕</button>
             <div style="font-size: 3.5rem; animation: bounce 0.8s infinite alternate;">🛎️</div>
             <h2 style="color: #e74c3c; font-size: 1.7rem; margin-bottom: 0.5rem;">CHAMAR CLIENTE!</h2>
-            <p id="waiter-notif-msg" class="notification-msg" style="color: #222; font-size: 1.25rem;">O pedido está pronto no balcão!</p>
+            <p id="waiter-notif-msg" class="notification-msg" style="color: #222; font-size: 1.25rem;">Há uma atualização no pedido.</p>
             <p style="color: #666; font-size: 0.9rem; margin-bottom: 1.5rem;">O alarme sonoro continuará tocando até você clicar no botão abaixo:</p>
             <button id="btn-indo-buscar" class="btn-indo" style="background: #27ae60; font-size: 1.3rem; padding: 1.2rem; letter-spacing: 0.5px;">
                 📣 CLIENTE CHAMADO
@@ -299,7 +282,7 @@
     <!-- Biblioteca MQTT para rede em tempo real -->
     <script src="assets/js/mqtt-4.3.7.min.js?v=20260823-1"></script>
     <script src="persistence.js?v=20260926-5"></script>
-    <script src="app.js?v=20260926-5"></script>
+    <script src="app.js?v=20260927-6"></script>
 </body>
 
 </html>

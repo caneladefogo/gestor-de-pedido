@@ -6,7 +6,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
     <title>Painel da Cozinha - Canela de Fogo</title>
     <link rel="icon" type="image/png" href="logo.png">
-    <link rel="stylesheet" href="cozinha.css?v=20260926-3">
+    <link rel="stylesheet" href="cozinha.css?v=20260927-4">
     <script src="assets/js/mqtt-4.3.7.min.js?v=20260823-1"></script>
 </head>
 
@@ -26,6 +26,7 @@
                 style="background: #e67e22; color: white; border: none; padding: 0.5rem 1rem; font-weight: bold; border-radius: 8px; cursor: pointer;">Som: Ligado 🔊</button>
             <button id="beverage-stock-btn" class="stock-header-btn">Estoque de Bebidas</button>
             <button id="prep-settings-btn" class="prep-settings-btn">Tempos de preparo</button>
+            <button id="product-prices-btn" class="product-prices-btn">Preços dos pratos</button>
             <a href="index.html" class="module-link">Cadastro de Pedidos</a>
             <div id="status" class="status-offline">Aguardando Início...</div>
         </div>
@@ -42,6 +43,17 @@
             </div>
 
             <div id="beverage-stock-list" class="beverage-stock-list"></div>
+        </div>
+    </div>
+
+    <div id="product-prices-overlay" class="overlay hidden">
+        <div class="overlay-modal product-prices-modal">
+            <div class="stock-modal-header">
+                <div><h2>Preços dos pratos</h2><p>Edite o valor usado nos novos pedidos.</p></div>
+                <button id="close-product-prices-btn" class="stock-close-btn dialog-close-x" aria-label="Fechar preços">✕</button>
+            </div>
+            <div id="product-prices-list" class="product-prices-list"></div>
+            <button id="save-product-prices-btn" class="edit-order-save-btn">Salvar preços</button>
         </div>
     </div>
 
@@ -96,7 +108,6 @@
                 <label>Estado do pedido<select id="edit-order-status">
                     <option value="preservar">Manter estados atuais</option>
                     <option value="fila">Na fila</option>
-                    <option value="em_preparo">Em preparo</option>
                     <option value="pronto">Pronto</option>
                     <option value="entregue">Entregue</option>
                 </select></label>
@@ -127,6 +138,9 @@
             <button id="tab-entregues" class="tab-btn"
                 style="background:#444; color:white; border:none; padding:0.8rem 1rem; font-weight:bold; border-radius:8px; flex:1; min-width: 120px; cursor:pointer;"
                 onclick="switchTab('entregues')">Histórico Entregues <span id="kitchen-count-entregues" class="badge-pill">0</span></button>
+            <button id="tab-prontos" class="tab-btn"
+                style="background:#444; color:white; border:none; padding:0.8rem 1rem; font-weight:bold; border-radius:8px; flex:1; min-width: 120px; cursor:pointer;"
+                onclick="switchTab('prontos')">Prontos <span id="kitchen-count-prontos" class="badge-pill">0</span></button>
             <button id="tab-chapeiro" class="tab-btn"
                 style="background:#444; color:white; border:none; padding:0.8rem 1rem; font-weight:bold; border-radius:8px; flex:1; min-width: 120px; cursor:pointer;"
                 onclick="switchTab('chapeiro')">Chapeiro <span id="kitchen-count-chapeiro" class="badge-pill">0</span></button>
@@ -166,9 +180,8 @@
     <main class="kitchen-board">
         <div class="kanban-board" id="pratos-container">
             <section class="kanban-lane"><h2>Na fila <span id="count-pratos-fila" class="badge-pill">0</span></h2><div class="column new-orders" id="pratos-fila-container"></div></section>
-            <section class="kanban-lane"><h2>Em preparo <span id="count-pratos-preparo" class="badge-pill">0</span></h2><div class="column new-orders" id="pratos-preparo-container"></div></section>
-            <section class="kanban-lane"><h2>Pronto <span id="count-pratos-pronto" class="badge-pill">0</span></h2><div class="column new-orders" id="pratos-pronto-container"></div></section>
         </div>
+        <div class="column new-orders" id="prontos-container" style="display:none;"></div>
         <div class="column" id="entregues-container" style="display:none;">
             <!-- Itens Entregues -->
         </div>
@@ -187,7 +200,7 @@
     </main>
 
     <script src="persistence.js?v=20260926-3"></script>
-    <script src="cozinha.js?v=20260926-3"></script>
+    <script src="cozinha.js?v=20260927-4"></script>
 </body>
 
 </html>

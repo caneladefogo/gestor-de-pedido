@@ -436,6 +436,19 @@ h2 {
 .waiter-inline-detail-item strong { color: #3b3033; font-size: .82rem; overflow-wrap: anywhere; }
 .waiter-inline-detail-item small { color: #71676a; font-size: .72rem; }
 .btn-open-detail-modal { min-height: 40px; border: 0; border-radius: 9px; background: #74131b; color: #fff; font-weight: 750; cursor: pointer; }
+.btn-add-order-items {
+    width: 100%;
+    min-height: 42px;
+    margin-top: .6rem;
+    padding: .65rem .8rem;
+    border: 0;
+    border-radius: 10px;
+    background: #74131b;
+    color: #fff;
+    font-weight: 800;
+    cursor: pointer;
+}
+.btn-add-order-items:hover { background: #8f1b25; }
 .waiter-detail-item { display: grid; gap: 4px; padding: 10px 0; border-bottom: 1px dashed #ddd5d0; }
 .waiter-detail-item small { color: #756b6e; font-size: .76rem; }
 
@@ -1412,6 +1425,13 @@ button, a { -webkit-tap-highlight-color: transparent; }
     color: #2f292b;
     font-size: 1rem;
 }
+#options-modal-body label,
+#options-modal-body strong,
+.customer-edit-modal label,
+.notification-modal label {
+    color: #30282b !important;
+    font-weight: 750;
+}
 .option-list-box {
     margin: .5rem 0 1rem;
     padding: 1rem;
@@ -1430,16 +1450,24 @@ button, a { -webkit-tap-highlight-color: transparent; }
 }
 .cart-bar { background: rgba(77,9,14,.98) !important; backdrop-filter: blur(10px); }
 @media (max-width:720px) {
-    .top-nav { align-items: stretch; gap: 10px; padding: max(10px,env(safe-area-inset-top)) 16px 12px !important; }
-    .logo-area { justify-content: flex-start; flex-wrap: wrap; }
-    .logo-area .status-badge { margin-left: auto; }
-    .header-actions { display: grid; grid-template-columns: minmax(0,1fr) auto; width: 100%; }
-    .table-info, .module-link { justify-content: center; min-width: 0; }
+    body { height: 100dvh; }
+    .top-nav { position: relative !important; top: auto !important; align-items: stretch; gap: 10px; padding: max(10px,env(safe-area-inset-top)) 16px 12px !important; }
+    .logo-area { display: grid !important; grid-template-columns: auto minmax(0,1fr); justify-content: stretch; width: 100%; }
+    .logo-area > div { min-width: 0; }
+    .logo-title, .logo-subtitle { display: block; white-space: normal; overflow-wrap: anywhere; }
+    .logo-area .status-badge { grid-column: 1 / -1; width: 100%; margin: 4px 0 0; }
+    .header-actions { display: grid; grid-template-columns: repeat(2,minmax(0,1fr)); width: 100%; }
+    .table-info, .module-link { justify-content: center; min-width: 0; height: auto; white-space: normal !important; overflow: visible; text-overflow: clip; text-align: center; overflow-wrap: anywhere; }
     .app-container { padding: 18px 16px 96px !important; }
+    .orders-toolbar { display: grid !important; grid-template-columns: 1fr; align-items: stretch !important; }
+    .orders-toolbar > div { display: grid !important; grid-template-columns: minmax(0,1fr); align-items: stretch !important; min-width: 0; }
+    .orders-toolbar h2 { font-size: 1.25rem !important; }
+    #waiter-filter, #btn-new-order { width: 100%; min-width: 0; white-space: normal; }
     .table-grid { grid-template-columns: 1fr; }
     .product-card { padding: 18px !important; }
     .notification-modal, .cart-modal-content { border-radius: 20px 20px 0 0 !important; }
-    .waiter-tabs { display: grid !important; grid-template-columns: repeat(2, minmax(0, 1fr)); }
+    .waiter-tabs { display: grid !important; grid-template-columns: repeat(3, minmax(0, 1fr)); }
+    .waiter-tabs .wtab-btn { padding-inline: 5px !important; font-size: .78rem !important; }
     .waiter-order-timers { grid-template-columns: 1fr; }
 }
 
@@ -1557,7 +1585,41 @@ input[type="checkbox"] {
     white-space: nowrap;
 }
 @media (max-width: 720px) {
-    .edit-current-customer-btn { width: 100%; order: 3; }
+    .menu-header {
+        display: grid !important;
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+        align-items: stretch !important;
+        gap: 10px !important;
+    }
+    .menu-title-block {
+        grid-column: 1 / -1;
+        grid-row: 1;
+        width: 100%;
+        align-items: center !important;
+        text-align: center !important;
+    }
+    #menu-order-title {
+        width: 100%;
+        max-width: 100%;
+        white-space: normal;
+        overflow: visible;
+        overflow-wrap: anywhere;
+        line-height: 1.25;
+    }
+    .menu-header .back-btn {
+        grid-column: 1;
+        grid-row: 2;
+        width: 100%;
+        white-space: normal;
+    }
+    .edit-current-customer-btn {
+        grid-column: 2;
+        grid-row: 2;
+        width: 100%;
+        min-width: 0;
+        white-space: normal;
+        line-height: 1.2;
+    }
 }
 .waiter-item-delivery-check {
     display: flex;

@@ -445,7 +445,7 @@ body { background: var(--flat-cream); color: var(--text); }
 .start-prep-btn { background: #2980b9 !important; }
 .mark-ready-btn { background: #259b57 !important; }
 .regress-status-btn { background: #d37a22 !important; }
-.deliver-lane-btn { background: #e6a900 !important; }
+.deliver-lane-btn { background: #259b57 !important; color: #fff !important; }
 .delete-kitchen-order-btn { background: #d94b4b !important; }
 
 .overlay { background: rgba(67, 50, 54, .45); backdrop-filter: blur(5px); }
@@ -471,7 +471,7 @@ input:focus, select:focus, textarea:focus { outline: 3px solid rgba(143,74,82,.1
 
 .kanban-board {
     display: grid;
-    grid-template-columns: repeat(3, minmax(280px, 1fr));
+    grid-template-columns: minmax(280px, 1fr);
     gap: 1rem;
     align-items: start;
     width: 100%;
@@ -1617,11 +1617,26 @@ body { background: #f8f7f5 !important; color: #261f21; }
 }
 .stock-close-btn, .edit-order-save-btn, .stock-save-btn { min-height: 44px; border-radius: 12px !important; }
 .beverage-stock-card { border-radius: 16px !important; box-shadow: 0 4px 20px -4px rgba(38,31,33,.16) !important; }
+.edit-order-fields label,
+.edit-order-item label,
+.prep-settings-group label,
+.product-prices-list label {
+    color: #30282b !important;
+    font-weight: 750;
+}
+.product-prices-modal { width: min(94vw, 640px); max-height: 88vh; overflow-y: auto; }
+.product-prices-list { display: grid; gap: 10px; margin: 18px 0; }
+.product-prices-list > label { display: grid; grid-template-columns: minmax(0,1fr) minmax(130px,170px); gap: 14px; align-items: center; padding: 12px; border: 1px solid #e3dbd6; border-radius: 12px; background: #faf8f6; }
+.price-input-wrap { display: flex; align-items: center; gap: 8px; color: #4d090e; font-weight: 800; }
+.price-input-wrap input { width: 100%; min-width: 0; padding: 10px; border: 1px solid #d8cfca; border-radius: 10px; }
+.product-prices-btn { background: #74131b !important; color: #fff !important; border: 0; font-weight: 750; }
 @media (max-width:720px) {
-    .top-nav { align-items: stretch; gap: 12px; padding: max(10px,env(safe-area-inset-top)) 16px 12px !important; }
-    .logo-area { justify-content: flex-start !important; }
+    .top-nav { position: relative !important; top: auto !important; align-items: stretch; gap: 12px; padding: max(10px,env(safe-area-inset-top)) 16px 12px !important; }
+    .logo-area { justify-content: flex-start !important; min-width: 0; }
+    .logo-area > div { min-width: 0; }
+    .logo-area > div > div { white-space: normal; overflow-wrap: anywhere; }
     .header-actions { display: grid; grid-template-columns: repeat(2,minmax(0,1fr)); width: 100%; gap: 8px; }
-    .header-actions button, .header-actions a, #status { width: 100%; justify-content: center; min-width: 0; }
+    .header-actions button, .header-actions a, #status { width: 100%; justify-content: center; min-width: 0; height: auto; white-space: normal !important; overflow-wrap: anywhere; text-align: center; }
     #status { grid-column: 1 / -1; }
     .kitchen-controls { padding: 18px 16px 0 !important; }
     .kitchen-controls > div:first-child { display: grid !important; grid-template-columns: repeat(2,minmax(0,1fr)); }
@@ -1638,6 +1653,7 @@ body { background: #f8f7f5 !important; color: #261f21; }
         min-width: 0;
         gap: 8px;
     }
+    .product-prices-list > label { grid-template-columns: 1fr; gap: 8px; }
 }
 
 /* Legibilidade operacional do painel */
