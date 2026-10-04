@@ -137,7 +137,7 @@ function deleteOrderPermanently(order) {
     if (!confirm(`Excluir definitivamente o pedido #${order.senha || '—'} de ${order.clientName || 'Cliente'}? Esta ação não pode ser desfeita.`)) return;
     const deletedAt = Date.now();
     applyDeletedOrderMarkers({ [order.id]: deletedAt });
-    publishMQTT({ type: 'DELETE_ORDER', orderId: order.id, deletedAt });
+    publishSync({ type: 'DELETE_ORDER', orderId: order.id, deletedAt });
     if (currentOrder && currentOrder.id === order.id) currentOrder = null;
     renderActiveOrders();
 }
@@ -178,16 +178,48 @@ function saveStoredOrders() {
         if (window.CanelaPersistence) {
             CanelaPersistence.saveSnapshot('atendimento_orders', globalActiveOrders);
         }
+        if (window.CanelaSupabase) {
+            CanelaSupabase.state.save('orders_atendimento', {
+                orders: globalActiveOrders,
+                deletedOrderIds,
+                historyClearedAt
+            }).catch(error => console.warn('Pedidos serão sincronizados quando o Supabase estiver disponível:', error));
+        }
     } catch (e) {
         console.error("Erro ao salvar pedidos:", e);
     }
 }
 
 async function hydratePersistentOrders() {
-    if (!window.CanelaPersistence) return;
-    const persisted = await CanelaPersistence.loadSnapshot('atendimento_orders');
-    if (!persisted || typeof persisted !== 'object') return;
-    Object.values(persisted).forEach(order => processIncomingOrder(order, false));
+    if (window.CanelaPersistence) {
+        const persisted = await CanelaPersistence.loadSnapshot('atendimento_orders');
+        if (persisted && typeof persisted === 'object') {
+            Object.values(persisted).forEach(order => processIncomingOrder(order, false));
+        }
+    }
+    if (window.CanelaSupabase) {
+        try {
+            const snapshots = await Promise.all([
+                CanelaSupabase.state.load('orders_atendimento'),
+                CanelaSupabase.state.load('orders_cozinha'),
+                CanelaSupabase.state.load('product_prices'),
+                CanelaSupabase.state.load('beverage_stock')
+            ]);
+            snapshots.slice(0, 2).forEach(snapshot => {
+                if (!snapshot || !snapshot.payload) return;
+                applyDeletedOrderMarkers(snapshot.payload.deletedOrderIds);
+                if (snapshot.payload.historyClearedAt) applyHistoryClear(snapshot.payload.historyClearedAt);
+                Object.values(snapshot.payload.orders || {}).forEach(order => processIncomingOrder(order, false));
+            });
+            if (snapshots[2] && snapshots[2].payload) receiveProductPriceSettings(snapshots[2].payload);
+            if (snapshots[3] && snapshots[3].payload) {
+                beverageStockState = snapshots[3].payload;
+                localStorage.setItem('canela_beverage_stock_view', JSON.stringify(beverageStockState));
+            }
+        } catch (error) {
+            console.warn('Estado remoto ainda indisponível:', error);
+        }
+    }
     saveStoredOrders();
     renderActiveOrders();
     openRequestedOrderEditor();
@@ -281,14 +313,14 @@ function stopContinuousAlarm() {
     }
 }
 
-// --- CONFIGURAÇÃO MQTT E SINCRONIZAÇÃO EM SEGUNDO PLANO ---
-const mqttTopic = 'caneladefogo/pedidos/sync';
-let mqttClient = null;
-let mqttIsOnline = false;
+// --- SINCRONIZAÇÃO SUPABASE EM SEGUNDO PLANO ---
+const syncTopic = 'caneladefogo/pedidos/sync';
+let syncClient = null;
+let syncIsOnline = false;
 const uniquePhoneClientId = 'canela_waiter_' + Math.random().toString(36).substring(2, 10) + '_' + Date.now();
 
 function setConnectionStatus(online) {
-    mqttIsOnline = online;
+    syncIsOnline = online;
     refreshConnectionStatus();
 }
 
@@ -301,7 +333,7 @@ async function refreshConnectionStatus() {
     if (!navigator.onLine) {
         el.textContent = pending > 0 ? `● Sem internet • ${pending} pendente(s)` : '● Sem internet';
         el.className = pending > 0 ? 'status-badge status-pending' : 'status-badge status-offline';
-    } else if (mqttIsOnline && pending === 0) {
+    } else if (syncIsOnline && pending === 0) {
         el.textContent = '● Online • Sincronizado';
         el.className = 'status-badge status-online';
     } else if (pending > 0) {
@@ -313,40 +345,44 @@ async function refreshConnectionStatus() {
     }
 }
 
-function initMQTT() {
-    if (typeof mqtt === 'undefined') return;
+function initSync() {
+    if (!window.CanelaSupabase) return;
 
     try {
-        mqttClient = mqtt.connect('wss://broker.hivemq.com:8884/mqtt', {
-            clientId: uniquePhoneClientId,
-            keepalive: 60,
-            reconnectPeriod: 2000,
-            clean: true
-        });
+        syncClient = CanelaSupabase.createClient();
 
-        mqttClient.on('connect', () => {
+        syncClient.on('connect', () => {
             setConnectionStatus(true);
-            mqttClient.subscribe(mqttTopic, (err) => {
+            syncClient.subscribe(syncTopic, (err) => {
                 if (!err) {
-                    publishMQTT({ type: 'REQUEST_SYNC' });
+                    publishSync({ type: 'REQUEST_SYNC' });
                     flushWaiterOutbox();
+                } else {
+                    setConnectionStatus(false);
                 }
             });
         });
 
-        mqttClient.on('reconnect', () => setConnectionStatus(false));
-        mqttClient.on('close', () => setConnectionStatus(false));
-        mqttClient.on('offline', () => setConnectionStatus(false));
-        mqttClient.on('error', () => setConnectionStatus(false));
+        syncClient.on('reconnect', () => setConnectionStatus(false));
+        syncClient.on('close', () => setConnectionStatus(false));
+        syncClient.on('offline', () => setConnectionStatus(false));
+        syncClient.on('error', error => {
+            setConnectionStatus(false);
+            const el = document.getElementById('conn-status');
+            if (el && error && /PGRST205|sync_events|sync_state/.test(error.message || '')) {
+                el.textContent = '● Banco aguardando configuração';
+                el.className = 'status-badge status-offline';
+            }
+        });
 
-        mqttClient.on('message', (t, msg) => {
+        syncClient.on('message', (t, msg) => {
             try {
-                if (t !== mqttTopic) return;
+                if (t !== syncTopic) return;
                 const data = JSON.parse(msg.toString());
 
                 if (data.type === 'REQUEST_SYNC') {
                     const list = Object.values(globalActiveOrders);
-                    publishMQTT({ type: 'SYNC_ALL_ORDERS', orders: list, historyClearedAt, deletedOrderIds, productPriceSettings });
+                    publishSync({ type: 'SYNC_ALL_ORDERS', orders: list, historyClearedAt, deletedOrderIds, productPriceSettings });
                     return;
                 }
 
@@ -418,11 +454,11 @@ function initMQTT() {
             }
         });
     } catch (e) {
-        console.error("Erro MQTT:", e);
+        console.error("Erro de sincronização Supabase:", e);
     }
 }
 
-async function publishMQTT(payload) {
+async function publishSync(payload) {
     const reliable = payload && (payload.type === 'ORDER_UPDATE' || payload.type === 'CLEAR_HISTORY' || payload.type === 'DELETE_ORDER');
     if (reliable && window.CanelaPersistence) {
         const queued = await CanelaPersistence.enqueue('atendimento', payload);
@@ -432,19 +468,19 @@ async function publishMQTT(payload) {
             return;
         }
     }
-    if (mqttClient && mqttClient.connected) mqttClient.publish(mqttTopic, JSON.stringify(payload), { qos: 1 });
+    if (syncClient && syncClient.connected) syncClient.publish(syncTopic, JSON.stringify(payload), { qos: 1 });
 }
 
 let waiterOutboxFlushing = false;
 async function flushWaiterOutbox() {
-    if (waiterOutboxFlushing || !window.CanelaPersistence || !mqttClient || !mqttClient.connected) return;
+    if (waiterOutboxFlushing || !window.CanelaPersistence || !syncClient || !syncClient.connected) return;
     waiterOutboxFlushing = true;
     try {
         const pending = await CanelaPersistence.listPending('atendimento');
         for (const entry of pending) {
-            if (!mqttClient.connected) break;
+            if (!syncClient.connected) break;
             await new Promise((resolve, reject) => {
-                mqttClient.publish(mqttTopic, JSON.stringify(entry.payload), { qos: 1 }, error => error ? reject(error) : resolve());
+                syncClient.publish(syncTopic, JSON.stringify(entry.payload), { qos: 1 }, error => error ? reject(error) : resolve());
             });
             await CanelaPersistence.removePending(entry.id);
             refreshConnectionStatus();
@@ -453,7 +489,7 @@ async function flushWaiterOutbox() {
         console.warn('Envios do atendimento continuarão pendentes:', error);
     } finally {
         waiterOutboxFlushing = false;
-        if (mqttClient && mqttClient.connected) {
+        if (syncClient && syncClient.connected) {
             const remaining = await CanelaPersistence.listPending('atendimento');
             if (remaining.length > 0) setTimeout(flushWaiterOutbox, 0);
         }
@@ -501,8 +537,8 @@ function handleAppResume() {
     keepScreenAlive();
     unlockAudio();
 
-    if (mqttClient && mqttClient.connected) {
-        publishMQTT({ type: 'REQUEST_SYNC' });
+    if (syncClient && syncClient.connected) {
+        publishSync({ type: 'REQUEST_SYNC' });
     }
 }
 
@@ -517,25 +553,25 @@ window.addEventListener('focus', handleAppResume);
 window.addEventListener('online', handleAppResume);
 window.addEventListener('offline', () => setConnectionStatus(false));
 setInterval(() => {
-    if (!navigator.onLine && mqttIsOnline) setConnectionStatus(false);
+    if (!navigator.onLine && syncIsOnline) setConnectionStatus(false);
 }, 1000);
 setInterval(updateWaiterTimers, 1000);
 setInterval(() => {
-    if (mqttClient && mqttClient.connected) flushWaiterOutbox();
+    if (syncClient && syncClient.connected) flushWaiterOutbox();
 }, 3000);
 setInterval(() => {
-    if (!mqttClient || !mqttClient.connected) return;
+    if (!syncClient || !syncClient.connected) return;
     Object.values(kitchenConfirmations).forEach(entry => {
         if (Date.now() - Number(entry.lastSentAt || 0) < 5000) return;
-        mqttClient.publish(mqttTopic, JSON.stringify(entry.payload), { qos: 1 });
+        syncClient.publish(syncTopic, JSON.stringify(entry.payload), { qos: 1 });
         entry.lastSentAt = Date.now();
         entry.attempts = (Number(entry.attempts) || 0) + 1;
     });
     localStorage.setItem('canela_kitchen_confirmations', JSON.stringify(kitchenConfirmations));
 }, 5000);
 setInterval(() => {
-    if (mqttClient && mqttClient.connected) publishMQTT({ type: 'REQUEST_SYNC' });
-}, 8000);
+    if (syncClient && syncClient.connected) publishSync({ type: 'REQUEST_SYNC' });
+}, 20000);
 
 // Auto-remove badges do Netlify injetadas
 setInterval(() => {
@@ -559,7 +595,6 @@ const els = {
     activeOrdersScreen: document.getElementById('active-orders-screen'),
     activeOrdersContainer: document.getElementById('active-orders-container'),
     btnNewOrder: document.getElementById('btn-new-order'),
-    btnNewQuickOrder: document.getElementById('btn-new-quick-order'),
     waiterFilter: document.getElementById('waiter-filter'),
     orderSearchInput: document.getElementById('order-search-input'),
 
@@ -583,9 +618,6 @@ const els = {
     editCustomerPriority: document.getElementById('edit-customer-priority'),
     closeEditCustomer: document.getElementById('close-edit-customer-x'),
     saveEditCustomer: document.getElementById('save-edit-customer'),
-    quickOrderModal: document.getElementById('quick-order-modal'),
-    btnStartQuickOrder: document.getElementById('btn-start-quick-order'),
-    btnCancelQuickOrder: document.getElementById('btn-cancel-quick-order'),
 
     productsContainer: document.getElementById('products-container'),
     categoriesContainer: document.getElementById('categories-container'),
@@ -604,7 +636,6 @@ const els = {
     cartItemsContainer: document.getElementById('cart-items-container'),
     cartModalTableTitle: document.getElementById('cart-modal-table'),
     checkoutBtn: document.getElementById('checkout-btn'),
-    quickOrderBtn: document.getElementById('quick-order-btn'),
     cartNotes: document.getElementById('cart-notes'),
     paymentReceived: document.getElementById('payment-received'),
     changeResult: document.getElementById('change-result'),
@@ -654,7 +685,7 @@ function init() {
     renderCategories();
     renderProducts();
     setupEventListeners();
-    initMQTT();
+    initSync();
 
     if (waiterName) {
         updateWaiterDisplay();
@@ -904,7 +935,7 @@ function renderActiveOrders() {
         const detailItemsHTML = order.items.map(item => {
             item.id ||= `item_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
             const itemName = item.product && item.product.name || 'Item';
-            const showsConsumption = (item.product && item.product.dynamic === 'prato') || itemName.startsWith('Caldo ') || itemName.startsWith('Panqueca de ');
+            const showsConsumption = (item.product && item.product.dynamic === 'prato') || itemName.startsWith('Caldo ');
             const itemConsumption = item.consumption === 'levar' || itemName.includes('Para Levar')
                 ? '🛍️ Para levar' : '🍽️ Comer no local';
             const itemDetails = [item.doneness ? `🔥 Ponto: ${escapeHtml(item.doneness)}` : '', item.note ? `📝 ${escapeHtml(item.note)}` : ''].filter(Boolean).join('<br>');
@@ -1031,7 +1062,7 @@ function deliverOrder(order) {
 
     globalActiveOrders[order.id] = order;
     saveStoredOrders();
-    publishMQTT({ type: 'ORDER_UPDATE', order: order });
+    publishSync({ type: 'ORDER_UPDATE', order: order });
     renderActiveOrders();
 }
 
@@ -1054,7 +1085,7 @@ function setWaiterItemDelivered(order, itemId, delivered) {
     order.updatedAt = changedAt;
     globalActiveOrders[order.id] = order;
     saveStoredOrders();
-    publishMQTT({ type: 'ORDER_UPDATE', order });
+    publishSync({ type: 'ORDER_UPDATE', order });
     renderActiveOrders();
 }
 
@@ -1092,7 +1123,7 @@ function saveEditCustomerData() {
     if (storedOrder) {
         globalActiveOrders[order.id] = order;
         saveStoredOrders();
-        publishMQTT({ type: 'ORDER_UPDATE', order });
+        publishSync({ type: 'ORDER_UPDATE', order });
     }
     closeEditCustomerModal();
     renderActiveOrders();
@@ -1107,7 +1138,7 @@ function openOrderDetailModal(order) {
     let itemsHTML = '';
     order.items.forEach(item => {
         const itemName = item.product && item.product.name || 'Item';
-        const showsConsumption = (item.product && item.product.dynamic === 'prato') || itemName.startsWith('Caldo ') || itemName.startsWith('Panqueca de ');
+        const showsConsumption = (item.product && item.product.dynamic === 'prato') || itemName.startsWith('Caldo ');
         const consumption = item.consumption === 'levar' || itemName.includes('Para Levar')
             ? '🛍️ Para levar' : '🍽️ Comer no local';
         const statusLabels = { fila: 'Na fila', pronto: 'Pronto', entregue: 'Entregue' };
@@ -1199,7 +1230,7 @@ function renderProducts() {
                 <div class="product-desc">${unavailable ? 'Indisponível no estoque' : p.desc}</div>
             </div>
             <div class="product-action">
-                <span class="product-card-price">${p.dynamic === 'caldo' ? 'A partir de R$ 15,00' : formatCurrency(p.price)}</span>
+                <span class="product-card-price">${p.dynamic === 'caldo' ? `A partir de ${formatCurrency(calculateCaldoPrice('350ml', 'Carne', false))}` : formatCurrency(p.price)}</span>
                 <button class="add-btn" ${unavailable ? 'disabled' : `onclick="openProductOptions(${p.id})"`}>${unavailable ? '×' : '+'}</button>
             </div>
         `;
@@ -1222,8 +1253,7 @@ function createNewOrder() {
         tipoConsumo: selectedTipoConsumo || 'local',
         waiterName: waiterName || "Geral",
         items: [],
-        startedAt: null,
-        quickMode: false
+        startedAt: null
     };
 
     els.newOrderModal.classList.add('hidden');
@@ -1231,27 +1261,6 @@ function createNewOrder() {
     els.editCurrentCustomerBtn.classList.remove('hidden');
     els.cartNotes.value = "";
 
-    els.activeOrdersScreen.classList.remove('view-active');
-    els.screenMenu.classList.add('view-active');
-    updateCartIcon();
-}
-
-function createQuickOrder() {
-    currentOrder = {
-        id: `CANELA-${Date.now()}-${Math.random().toString(36).substr(2, 6)}`,
-        senha: null,
-        clientName: 'Pedido Rápido',
-        feature: '',
-        priority: 'normal',
-        tipoConsumo: 'local',
-        waiterName: waiterName || 'Geral',
-        items: [],
-        startedAt: null,
-        quickMode: true
-    };
-    els.menuOrderTitle.textContent = '⚡ Pedido Rápido';
-    els.editCurrentCustomerBtn.classList.add('hidden');
-    els.cartNotes.value = '';
     els.activeOrdersScreen.classList.remove('view-active');
     els.screenMenu.classList.add('view-active');
     updateCartIcon();
@@ -1305,44 +1314,6 @@ window.openProductOptions = function (productId, editIndex = null) {
         updateCaldoPricePreview();
         els.optionsModal.classList.remove('hidden');
         if (editItem) prefillProductOptions(editItem, 'caldo');
-    } else if (product.dynamic === "panqueca") {
-        els.modalOptionsTitle.textContent = 'Montar Panqueca';
-        els.optionsModalBody.innerHTML = `
-            <label><strong>1. Sabor da Panqueca:</strong></label>
-            <select id="panqueca-sabor">
-                <option value="Carne">Carne</option>
-                <option value="Frango">Frango</option>
-            </select>
-            <label><strong>2. Tipo de Arroz:</strong></label>
-            <select id="panqueca-arroz">
-                <option value="Arroz c/ Brócolis">Arroz com Brócolis</option>
-                <option value="Arroz Branco">Arroz Branco</option>
-                <option value="Baião">Baião de Dois</option>
-                <option value="Sem arroz">Sem arroz</option>
-            </select>
-            <label><strong>3. Deseja RETIRAR algo?</strong></label>
-            <div class="option-list-box removal-options">
-                <label class="option-checkbox"><input type="checkbox" name="panqueca-retira" value="Batata Palha"><span>Batata palha</span></label>
-            </div>
-            <label><strong>4. Local do Consumo:</strong></label>
-            <select id="panqueca-local">
-                <option value="Comer no Local" ${selectedTipoConsumo === 'local' ? 'selected' : ''}>Comer no Local</option>
-                <option value="Para Levar" ${selectedTipoConsumo === 'levar' ? 'selected' : ''}>Para Levar</option>
-            </select>
-            <label><strong>5. Quantidade:</strong></label>
-            <div class="option-qty-control">
-                <button type="button" class="option-qty-btn" onclick="changeOptionQty(-1)">−</button>
-                <input type="number" id="option-qty" value="1" min="1" max="99" inputmode="numeric">
-                <button type="button" class="option-qty-btn" onclick="changeOptionQty(1)">+</button>
-            </div>
-            <div class="individual-dish-note-section">
-                <label for="panqueca-note"><strong>6. Anotação deste prato (opcional):</strong></label>
-                <textarea id="panqueca-note" class="individual-dish-note" rows="2" placeholder="Ex: pouco molho, servir separado..."></textarea>
-            </div>
-            <div class="configured-product-price">Valor unitário: ${formatCurrency(product.price)}</div>
-        `;
-        els.optionsModal.classList.remove('hidden');
-        if (editItem) prefillProductOptions(editItem, 'panqueca');
     } else if (product.dynamic === "prato") {
         els.modalOptionsTitle.textContent = `Montar Prato: ${product.name}`;
         const acceptsAdditions = product.name.includes('Carne de Sol') || product.name.includes('Misto');
@@ -1355,7 +1326,7 @@ window.openProductOptions = function (productId, editIndex = null) {
 
         let extrasHTML = extras.map(e => `<label class="option-checkbox"><input type="checkbox" name="prato-retira" value="${e}"><span>${e}</span></label>`).join('');
         const additionsHTML = ['Banana Frita', 'Maionese', 'Batata Palha', 'Purê de Batata']
-            .map(addition => `<label class="option-checkbox"><input type="checkbox" name="prato-adicional" value="${addition}"><span>${addition} <b>+ R$ 3,00</b></span></label>`)
+            .map(addition => `<label class="option-checkbox"><input type="checkbox" name="prato-adicional" value="${addition}"><span>${addition} <b>+ ${formatCurrency(getDishAdditionPrice())}</b></span></label>`)
             .join('');
         const localStep = product.name.includes('Picanha') ? 4 : acceptsAdditions ? 4 : 3;
         const quantityStep = localStep + 1;
@@ -1382,7 +1353,7 @@ window.openProductOptions = function (productId, editIndex = null) {
             <div style="margin: 0.5rem 0 1rem 0; background:rgba(0,0,0,0.05); padding:1rem; border-radius:8px; border:1px solid #ddd; color:var(--danger)">
                 ${extrasHTML}
             </div>
-            ${acceptsAdditions ? `<label><strong>3. Adicionais:</strong> Cada item acrescenta R$ 3,00:</label>
+            ${acceptsAdditions ? `<label><strong>3. Adicionais:</strong> Cada item acrescenta ${formatCurrency(getDishAdditionPrice())}:</label>
             <div class="option-list-box dish-additions-options">
                 ${additionsHTML}
             </div>` : ''}
@@ -1426,16 +1397,6 @@ function prefillProductOptions(item, type) {
         }
         document.getElementById('caldo-local').value = item.consumption === 'levar' ? 'Para Levar' : 'Comer no Local';
         updateCaldoPricePreview();
-    } else if (type === 'panqueca') {
-        const match = name.match(/^Panqueca de (Carne|Frango) \+ (.+?) \[(?:TIRAR:\s*([^\]]+)|COMPLETO)\]\s+-/);
-        if (match) {
-            document.getElementById('panqueca-sabor').value = match[1];
-            document.getElementById('panqueca-arroz').value = match[2];
-            const removed = match[3] ? match[3].split(',').map(value => value.trim()) : [];
-            document.querySelectorAll('input[name="panqueca-retira"]').forEach(input => input.checked = removed.includes(input.value));
-        }
-        document.getElementById('panqueca-local').value = item.consumption === 'levar' ? 'Para Levar' : 'Comer no Local';
-        document.getElementById('panqueca-note').value = item.note || '';
     } else {
         const riceMatch = name.match(/\+\s(.+?)\s\[(?:TIRAR:|COMPLETO)/);
         const removeMatch = name.match(/\[TIRAR:\s*([^\]]+)\]/);
@@ -1454,10 +1415,23 @@ function prefillProductOptions(item, type) {
 }
 
 function calculateCaldoPrice(tam, sabor, hasAccompaniment) {
-    if (sabor === 'Camarão') {
-        return tam === '350ml' ? (hasAccompaniment ? 20 : 18) : (hasAccompaniment ? 30 : 25);
-    }
-    return tam === '350ml' ? (hasAccompaniment ? 18 : 15) : (hasAccompaniment ? 27 : 25);
+    const shrimp = sabor === 'Camarão';
+    const key = shrimp
+        ? `Caldo de Camarão ${tam} ${hasAccompaniment ? 'com' : 'sem'} acompanhamento`
+        : `Caldo comum ${tam} ${hasAccompaniment ? 'com' : 'sem'} acompanhamento`;
+    const defaults = {
+        'Caldo comum 350ml sem acompanhamento': 15, 'Caldo comum 350ml com acompanhamento': 18,
+        'Caldo comum 500ml sem acompanhamento': 25, 'Caldo comum 500ml com acompanhamento': 27,
+        'Caldo de Camarão 350ml sem acompanhamento': 18, 'Caldo de Camarão 350ml com acompanhamento': 20,
+        'Caldo de Camarão 500ml sem acompanhamento': 25, 'Caldo de Camarão 500ml com acompanhamento': 30
+    };
+    const configured = Number(productPriceSettings.items && productPriceSettings.items[key]);
+    return Number.isFinite(configured) && configured >= 0 ? configured : defaults[key];
+}
+
+function getDishAdditionPrice() {
+    const configured = Number(productPriceSettings.items && productPriceSettings.items['Adicional do prato']);
+    return Number.isFinite(configured) && configured >= 0 ? configured : 3;
 }
 
 function updateCaldoPricePreview() {
@@ -1477,7 +1451,7 @@ function updatePratoPricePreview() {
     const product = DB.products.find(entry => entry.id === pendingProductId);
     if (!product) return;
     const additionsCount = document.querySelectorAll('input[name="prato-adicional"]:checked').length;
-    const unitPrice = Number(product.price) + (additionsCount * 3);
+    const unitPrice = Number(product.price) + (additionsCount * getDishAdditionPrice());
     const quantity = getOptionQty();
     preview.textContent = `Unitário: ${formatCurrency(unitPrice)} • Total: ${formatCurrency(unitPrice * quantity)}`;
 }
@@ -1513,14 +1487,6 @@ els.btnConfirmOptions.onclick = () => {
         let nName = `Caldo ${sabor} ${tam} (${temAcc ? "Com: " + accChecked.join(', ') : "Sem Acomp."}) - ${local}`;
         commitAddToCart(product, nName, preco, getOptionQty());
 
-    } else if (product.dynamic === "panqueca") {
-        const sabor = document.getElementById('panqueca-sabor').value;
-        const arroz = document.getElementById('panqueca-arroz').value;
-        const local = document.getElementById('panqueca-local').value;
-        const retiradas = Array.from(document.querySelectorAll('input[name="panqueca-retira"]:checked')).map(input => input.value);
-        const montagem = retiradas.length ? `[TIRAR: ${retiradas.join(', ')}]` : '[COMPLETO]';
-        const nome = `Panqueca de ${sabor} + ${arroz} ${montagem} - ${local}`;
-        commitAddToCart(product, nome, product.price, getOptionQty(), { note: document.getElementById('panqueca-note').value.trim() });
     } else if (product.dynamic === "prato") {
         const arroz = document.getElementById('prato-arroz').value;
         const local = document.getElementById('prato-local').value;
@@ -1530,7 +1496,7 @@ els.btnConfirmOptions.onclick = () => {
         const retiStr = retiradas.length > 0 ? `[TIRAR: ${retiradas.join(', ')}]` : '[COMPLETO]';
         const additionsStr = additions.length > 0 ? ` [ADICIONAIS: ${additions.join(', ')}]` : '';
 
-        let preco = Number(product.price) + (additions.length * 3);
+        let preco = Number(product.price) + (additions.length * getDishAdditionPrice());
         let nName = `${product.name} + ${arroz} ${retiStr}${additionsStr} - ${local}`;
         commitAddToCart(product, nName, preco, getOptionQty(), {
             doneness: document.getElementById('picanha-point') ? document.getElementById('picanha-point').value : '',
@@ -1652,7 +1618,7 @@ function setupEventListeners() {
     els.closeEditCustomer.onclick = closeEditCustomerModal;
     els.saveEditCustomer.onclick = saveEditCustomerData;
     els.editCurrentCustomerBtn.onclick = () => {
-        if (currentOrder && !currentOrder.quickMode) openEditCustomerModal(currentOrder);
+        if (currentOrder) openEditCustomerModal(currentOrder);
     };
 
     els.backToOrdersBtn.onclick = () => {
@@ -1709,13 +1675,13 @@ function setupEventListeners() {
                 const clearedMarkers = Object.fromEntries(entreguesList.map(order => [order.id, clearedAt]));
                 applyDeletedOrderMarkers(clearedMarkers);
                 applyHistoryClear(clearedAt);
-                publishMQTT({ type: 'CLEAR_HISTORY', clearedAt, deletedOrderIds: clearedMarkers });
+                publishSync({ type: 'CLEAR_HISTORY', clearedAt, deletedOrderIds: clearedMarkers });
                 renderActiveOrders();
             }
         };
     }
 
-    els.checkoutBtn.onclick = () => finalizeCurrentOrder(false);
+    els.checkoutBtn.onclick = finalizeCurrentOrder;
 
     els.paymentReceived.oninput = updateChangePreview;
     els.toggleChangeBtn.onclick = () => {
@@ -1782,25 +1748,20 @@ function formatCurrency(value) {
     return Number(value || 0).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
 }
 
-function finalizeCurrentOrder(isQuickOrder) {
+function finalizeCurrentOrder() {
     if (!currentOrder || currentOrder.items.length === 0) return;
     const existingOrder = globalActiveOrders[currentOrder.id];
     const now = Date.now();
-    const quickMode = Boolean(isQuickOrder || currentOrder.quickMode);
     const immutableStart = Number(existingOrder && (existingOrder.startedAt || existingOrder.timestamp)) || now;
 
     const total = currentOrder.items.reduce((sum, item) => sum + item.product.price * item.qty, 0);
     const received = Math.max(0, Number(els.paymentReceived.value) || 0);
-    if (!quickMode && !currentOrder.senha) currentOrder.senha = assignOrderSenha();
+    if (!currentOrder.senha) currentOrder.senha = assignOrderSenha();
     currentOrder.items.forEach(item => {
         const previous = existingOrder && existingOrder.items.find(oldItem => oldItem.id === item.id);
         if (previous) item.status = previous.status;
         if (!item.status) item.status = 'fila';
-        if (!previous && !quickMode && item.status === 'fila') item.queuedAt = immutableStart;
-        if (quickMode && item.status !== 'entregue') {
-            item.status = 'entregue';
-            item.deliveredAt = now;
-        }
+        if (!previous && item.status === 'fila') item.queuedAt = immutableStart;
     });
     const pedidoMsg = {
         ...currentOrder,
@@ -1809,28 +1770,16 @@ function finalizeCurrentOrder(isQuickOrder) {
         total,
         paymentReceived: received || null,
         changeDue: received ? Math.max(0, received - total) : null,
-        senha: currentOrder.senha || (quickMode ? 'RÁPIDO' : null),
-        quickOrder: quickMode,
+        senha: currentOrder.senha,
         startedAt: existingOrder ? immutableStart : now,
         timestamp: existingOrder ? (existingOrder.timestamp || now) : now,
         updatedAt: now
     };
-    if (quickMode) {
-        pedidoMsg.items.forEach(item => {
-            item.status = 'entregue';
-            item.deliveredAt = now;
-        });
-        pedidoMsg.quickOrder = true;
-        pedidoMsg.deliveredAt = now;
-    }
-
     globalActiveOrders[pedidoMsg.id] = pedidoMsg;
     saveStoredOrders();
-    if (!quickMode) {
-        const updatePayload = { type: 'ORDER_UPDATE', order: pedidoMsg };
-        trackKitchenConfirmation(updatePayload);
-        publishMQTT(updatePayload);
-    }
+    const updatePayload = { type: 'ORDER_UPDATE', order: pedidoMsg };
+    trackKitchenConfirmation(updatePayload);
+    publishSync(updatePayload);
 
     els.cartModal.classList.add('hidden');
     els.cartNotes.value = '';
@@ -1866,10 +1815,7 @@ function setupDialogBehavior(dialog, fields, finalAction) {
 function openCartModal() {
     els.cartModal.classList.remove('hidden');
     els.cartModalTableTitle.textContent = currentOrder.clientName;
-    const isQuickMode = Boolean(currentOrder.quickMode);
-    els.checkoutBtn.classList.toggle('hidden', isQuickMode);
-    if (els.quickOrderBtn) els.quickOrderBtn.classList.toggle('hidden', !isQuickMode);
-    els.cartModal.classList.toggle('quick-mode', isQuickMode);
+    els.checkoutBtn.classList.remove('hidden');
     els.changePanel.classList.add('hidden');
     els.toggleChangeBtn.setAttribute('aria-expanded', 'false');
     els.toggleChangeBtn.textContent = '💵 Informar valor para troco';

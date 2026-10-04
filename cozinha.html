@@ -6,8 +6,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
     <title>Painel da Cozinha - Canela de Fogo</title>
     <link rel="icon" type="image/png" href="logo.png">
-    <link rel="stylesheet" href="cozinha.css?v=20260927-4">
-    <script src="assets/js/mqtt-4.3.7.min.js?v=20260823-1"></script>
+    <link rel="stylesheet" href="cozinha.css?v=20261004-4">
 </head>
 
 <body>
@@ -20,13 +19,9 @@
             </div>
         </div>
         <div class="header-actions">
-            <button id="test-sound-btn" onclick="testSoundKitchen()"
-                style="background: #27ae60; color: white; border: none; padding: 0.5rem 1rem; font-weight: bold; border-radius: 8px; cursor: pointer; box-shadow: 0 2px 5px rgba(0,0,0,0.3);">🔔 Testar Som</button>
-            <button id="audio-toggle-btn"
-                style="background: #e67e22; color: white; border: none; padding: 0.5rem 1rem; font-weight: bold; border-radius: 8px; cursor: pointer;">Som: Ligado 🔊</button>
             <button id="beverage-stock-btn" class="stock-header-btn">Estoque de Bebidas</button>
             <button id="prep-settings-btn" class="prep-settings-btn">Tempos de preparo</button>
-            <button id="product-prices-btn" class="product-prices-btn">Preços dos pratos</button>
+            <button id="product-prices-btn" class="product-prices-btn">Preços dos itens</button>
             <a href="index.html" class="module-link">Cadastro de Pedidos</a>
             <div id="status" class="status-offline">Aguardando Início...</div>
         </div>
@@ -49,7 +44,7 @@
     <div id="product-prices-overlay" class="overlay hidden">
         <div class="overlay-modal product-prices-modal">
             <div class="stock-modal-header">
-                <div><h2>Preços dos pratos</h2><p>Edite o valor usado nos novos pedidos.</p></div>
+                <div><h2>Preços dos itens</h2><p>Edite pratos, caldos, adicionais e bebidas usados nos novos pedidos.</p></div>
                 <button id="close-product-prices-btn" class="stock-close-btn dialog-close-x" aria-label="Fechar preços">✕</button>
             </div>
             <div id="product-prices-list" class="product-prices-list"></div>
@@ -116,16 +111,6 @@
             <div id="edit-order-items" class="edit-order-items"></div>
             <button id="open-full-order-editor-btn" class="full-order-editor-btn">Abrir editor completo de itens e cardápio</button>
             <button id="save-edit-order-btn" class="edit-order-save-btn">Salvar alterações</button>
-        </div>
-    </div>
-
-    <!-- Overlay para permitir o Áudio (Navegadores bloqueiam som automático) -->
-    <div id="audio-overlay" class="overlay">
-        <div class="overlay-modal">
-            <button id="close-audio-overlay-btn" class="dialog-close-x" type="button" aria-label="Fechar ativação de som">✕</button>
-            <h2>Bem-vindo à Cozinha</h2>
-            <p>Clique no botão abaixo para ativar os alertas sonoros de novos pedidos.</p>
-            <button id="start-btn">Ativar Som e Iniciar Painel</button>
         </div>
     </div>
 
@@ -199,8 +184,9 @@
         </div>
     </main>
 
-    <script src="persistence.js?v=20260926-3"></script>
-    <script src="cozinha.js?v=20260927-4"></script>
+    <script src="supabase-sync.js?v=20261004-4"></script>
+    <script src="persistence.js?v=20261004-4"></script>
+    <script src="cozinha.js?v=20261004-4"></script>
 </body>
 
 </html>

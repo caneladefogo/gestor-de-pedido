@@ -404,8 +404,6 @@ body { background: var(--flat-cream); color: var(--text); }
     border-radius: 14px !important;
     box-shadow: none !important;
 }
-.header-actions #test-sound-btn { background: #259b57 !important; color: #fff !important; }
-#audio-toggle-btn { background: var(--flat-yellow) !important; color: #594414 !important; }
 .stock-header-btn { background: #7652bd !important; color: #fff !important; }
 .prep-settings-btn { background: #2980b9 !important; color: #fff !important; }
 .module-link { background: var(--flat-yellow) !important; color: #594414 !important; }
@@ -1610,11 +1608,6 @@ body { background: #f8f7f5 !important; color: #261f21; }
     line-height: 1;
     cursor: pointer;
 }
-#close-audio-overlay-btn {
-    position: absolute;
-    top: 10px;
-    right: 10px;
-}
 .stock-close-btn, .edit-order-save-btn, .stock-save-btn { min-height: 44px; border-radius: 12px !important; }
 .beverage-stock-card { border-radius: 16px !important; box-shadow: 0 4px 20px -4px rgba(38,31,33,.16) !important; }
 .edit-order-fields label,
@@ -1626,7 +1619,9 @@ body { background: #f8f7f5 !important; color: #261f21; }
 }
 .product-prices-modal { width: min(94vw, 640px); max-height: 88vh; overflow-y: auto; }
 .product-prices-list { display: grid; gap: 10px; margin: 18px 0; }
-.product-prices-list > label { display: grid; grid-template-columns: minmax(0,1fr) minmax(130px,170px); gap: 14px; align-items: center; padding: 12px; border: 1px solid #e3dbd6; border-radius: 12px; background: #faf8f6; }
+.product-price-group { display: grid; gap: 10px; padding: 14px; border: 1px solid #e3dbd6; border-radius: 14px; background: #f4efeb; }
+.product-price-group h3 { margin: 0 0 2px; color: #4d090e; font-size: 1.05rem; }
+.product-price-group > label { display: grid; grid-template-columns: minmax(0,1fr) minmax(130px,170px); gap: 14px; align-items: center; padding: 12px; border: 1px solid #e3dbd6; border-radius: 12px; background: #fff; color: #24191a; font-weight: 650; }
 .price-input-wrap { display: flex; align-items: center; gap: 8px; color: #4d090e; font-weight: 800; }
 .price-input-wrap input { width: 100%; min-width: 0; padding: 10px; border: 1px solid #d8cfca; border-radius: 10px; }
 .product-prices-btn { background: #74131b !important; color: #fff !important; border: 0; font-weight: 750; }
@@ -1653,7 +1648,7 @@ body { background: #f8f7f5 !important; color: #261f21; }
         min-width: 0;
         gap: 8px;
     }
-    .product-prices-list > label { grid-template-columns: 1fr; gap: 8px; }
+    .product-price-group > label { grid-template-columns: 1fr; gap: 8px; }
 }
 
 /* Legibilidade operacional do painel */

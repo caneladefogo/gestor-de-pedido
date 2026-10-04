@@ -1,12 +1,8 @@
 const topic = 'caneladefogo/pedidos/sync';
-let audioCtx = null;
-let mqttClient = null;
-let kitchenMqttOnline = false;
+let syncClient = null;
+let kitchenSyncOnline = false;
 
 const els = {
-    overlay: document.getElementById('audio-overlay'),
-    startBtn: document.getElementById('start-btn'),
-    audioToggleBtn: document.getElementById('audio-toggle-btn'),
     pratosFilaContainer: document.getElementById('pratos-fila-container'),
     prontosContainer: document.getElementById('prontos-container'),
     entreguesContainer: document.getElementById('entregues-container'),
@@ -48,18 +44,37 @@ const els = {
     saveEditOrderBtn: document.getElementById('save-edit-order-btn')
 };
 
-let audioEnabled = localStorage.getItem('canela_audio_pref') !== 'off';
-let audioUnlocked = false;
 let currentTab = 'pratos';
 let kitchenSearchQuery = "";
 let historyClearedAt = Number(localStorage.getItem('canela_history_cleared_at')) || 0;
 let deletedOrderIds = loadDeletedOrderIds();
 let editingOrderId = null;
 let prepTimeSettings = loadPrepTimeSettings();
-const PRODUCT_PRICE_DEFAULTS = {
-    'Carne de Sol na Chapa': 25, 'Misto na Chapa': 25, 'Picanha na Chapa': 35,
-    'Filé de Frango Frito': 25, 'Filé de Tambaqui Frito': 35
+const PRODUCT_PRICE_GROUPS = {
+    'Pratos': {
+        'Carne de Sol na Chapa': 25, 'Misto na Chapa': 25, 'Picanha na Chapa': 35,
+        'Filé de Frango Frito': 25, 'Filé de Tambaqui Frito': 35,
+        'Adicional do prato': 3
+    },
+    'Caldos': {
+        'Caldo comum 350ml sem acompanhamento': 15,
+        'Caldo comum 350ml com acompanhamento': 18,
+        'Caldo comum 500ml sem acompanhamento': 25,
+        'Caldo comum 500ml com acompanhamento': 27,
+        'Caldo de Camarão 350ml sem acompanhamento': 18,
+        'Caldo de Camarão 350ml com acompanhamento': 20,
+        'Caldo de Camarão 500ml sem acompanhamento': 25,
+        'Caldo de Camarão 500ml com acompanhamento': 30
+    },
+    'Refrigerantes': {
+        'Coca-Cola Lata': 6, 'Coca-Cola Zero Lata': 6, 'Fanta Uva Lata': 6,
+        'Fanta Laranja Lata': 6, 'Coca-Cola 1L': 12, 'Fanta Laranja 1L': 12, 'Baré 1L': 12
+    },
+    'Sucos e outras bebidas': {
+        'Suco de Acerola': 8, 'Suco de Maracujá': 8, 'Água Mineral': 6
+    }
 };
+const PRODUCT_PRICE_DEFAULTS = Object.assign({}, ...Object.values(PRODUCT_PRICE_GROUPS));
 let productPriceSettings = loadProductPriceSettings();
 
 function loadProductPriceSettings() {
@@ -71,6 +86,7 @@ function saveProductPriceSettings(settings, publish = true) {
     if (!settings || Number(settings.updatedAt || 0) < Number(productPriceSettings.updatedAt || 0)) return;
     productPriceSettings = { items: { ...PRODUCT_PRICE_DEFAULTS, ...(settings.items || {}) }, updatedAt: Number(settings.updatedAt) || Date.now() };
     localStorage.setItem('canela_product_prices', JSON.stringify(productPriceSettings));
+    if (window.CanelaSupabase) CanelaSupabase.state.save('product_prices', productPriceSettings).catch(error => console.warn('Preços aguardando sincronização:', error));
     if (publish) publishUpdate({ type: 'PRODUCT_PRICE_SETTINGS', settings: productPriceSettings }, false);
 }
 
@@ -83,6 +99,7 @@ function loadPrepTimeSettings() {
 function savePrepTimeSettings(settings, publish = true) {
     prepTimeSettings = { ...prepTimeSettings, ...settings, updatedAt: Number(settings.updatedAt) || Date.now() };
     localStorage.setItem('canela_prep_time_settings', JSON.stringify(prepTimeSettings));
+    if (window.CanelaSupabase) CanelaSupabase.state.save('prep_times', prepTimeSettings).catch(error => console.warn('Tempos aguardando sincronização:', error));
     if (publish) publishUpdate({ type: 'PREP_TIME_SETTINGS', settings: prepTimeSettings }, false);
     renderAll();
 }
@@ -173,6 +190,13 @@ function saveStoredOrders() {
         if (window.CanelaPersistence) {
             CanelaPersistence.saveSnapshot('cozinha_orders', globalOrders);
         }
+        if (window.CanelaSupabase) {
+            CanelaSupabase.state.save('orders_cozinha', {
+                orders: globalOrders,
+                deletedOrderIds,
+                historyClearedAt
+            }).catch(error => console.warn('Pedidos aguardando sincronização:', error));
+        }
     } catch (e) {
         console.error("Erro ao salvar dados da cozinha:", e);
     }
@@ -181,10 +205,7 @@ function saveStoredOrders() {
 let globalOrders = loadStoredOrders();
 
 async function hydrateKitchenOrders() {
-    if (!window.CanelaPersistence) return;
-    const persisted = await CanelaPersistence.loadSnapshot('cozinha_orders');
-    if (!persisted || typeof persisted !== 'object') return;
-    Object.values(persisted).forEach(order => {
+    const mergeOrders = orders => Object.values(orders || {}).forEach(order => {
         normalizeDeprecatedReadyStatus(order);
         if (deletedOrderIds[order.id || order.senha]) return;
         if (shouldSuppressDeliveredOrder(order)) return;
@@ -194,81 +215,41 @@ async function hydrateKitchenOrders() {
             globalOrders[id] = order;
         }
     });
+    if (window.CanelaPersistence) {
+        const persisted = await CanelaPersistence.loadSnapshot('cozinha_orders');
+        if (persisted && typeof persisted === 'object') mergeOrders(persisted);
+    }
+    if (window.CanelaSupabase) {
+        try {
+            const snapshots = await Promise.all([
+                CanelaSupabase.state.load('orders_cozinha'),
+                CanelaSupabase.state.load('orders_atendimento'),
+                CanelaSupabase.state.load('product_prices'),
+                CanelaSupabase.state.load('prep_times'),
+                CanelaSupabase.state.load('beverage_stock')
+            ]);
+            snapshots.slice(0, 2).forEach(snapshot => {
+                if (!snapshot || !snapshot.payload) return;
+                applyDeletedOrderMarkers(snapshot.payload.deletedOrderIds);
+                if (snapshot.payload.historyClearedAt) applyHistoryClear(snapshot.payload.historyClearedAt);
+                mergeOrders(snapshot.payload.orders);
+            });
+            if (snapshots[2] && snapshots[2].payload) saveProductPriceSettings(snapshots[2].payload, false);
+            if (snapshots[3] && snapshots[3].payload) savePrepTimeSettings(snapshots[3].payload, false);
+            if (snapshots[4] && snapshots[4].payload) receiveStockSnapshot(snapshots[4].payload);
+        } catch (error) {
+            console.warn('Estado remoto ainda indisponível:', error);
+        }
+    }
     saveStoredOrders();
     renderAll();
 }
 
-function unlockKitchenAudio() {
-    try {
-        if (!audioCtx) {
-            audioCtx = new (window.AudioContext || window.webkitAudioContext)();
-        }
-        if (audioCtx && audioCtx.state === 'suspended') {
-            audioCtx.resume();
-        }
-        audioUnlocked = true;
-    } catch (e) {
-        console.warn("Erro ao iniciar áudio:", e);
-    }
-}
-
-window.testSoundKitchen = function () {
-    unlockKitchenAudio();
-    playThreeBells();
-};
-
-// Desbloqueia áudio em qualquer toque/clique na tela
-window.addEventListener('click', unlockKitchenAudio);
-window.addEventListener('touchstart', unlockKitchenAudio);
-
-// Inicialização de Preferência de Áudio
-if (audioEnabled) {
-    els.overlay.classList.add('hidden');
-    if (els.audioToggleBtn) els.audioToggleBtn.textContent = 'Som: ON 🔊';
-    setTimeout(() => {
-        connectMQTT();
-        keepScreenAlive();
-    }, 0);
-} else {
-    if (els.audioToggleBtn) els.audioToggleBtn.textContent = 'Som: OFF 🔇';
-}
-
-els.startBtn.onclick = () => {
-    els.overlay.classList.add('hidden');
-    audioEnabled = true;
-    localStorage.setItem('canela_audio_pref', 'on');
-    if (els.audioToggleBtn) els.audioToggleBtn.textContent = 'Som: ON 🔊';
-    unlockKitchenAudio();
-    playThreeBells(); // Toca sino de confirmação
-    connectMQTT();
+// A conexão operacional começa automaticamente ao abrir o painel.
+setTimeout(() => {
+    connectSync();
     keepScreenAlive();
-    renderAll();
-};
-
-const closeAudioOverlayBtn = document.getElementById('close-audio-overlay-btn');
-if (closeAudioOverlayBtn) {
-    closeAudioOverlayBtn.onclick = () => {
-        els.overlay.classList.add('hidden');
-        audioEnabled = false;
-        localStorage.setItem('canela_audio_pref', 'off');
-        if (els.audioToggleBtn) els.audioToggleBtn.textContent = 'Som: OFF 🔇';
-        connectMQTT();
-        keepScreenAlive();
-        renderAll();
-    };
-}
-
-if (els.audioToggleBtn) {
-    els.audioToggleBtn.onclick = () => {
-        audioEnabled = !audioEnabled;
-        localStorage.setItem('canela_audio_pref', audioEnabled ? 'on' : 'off');
-        els.audioToggleBtn.textContent = audioEnabled ? 'Som: ON 🔊' : 'Som: OFF 🔇';
-        if (audioEnabled) {
-            unlockKitchenAudio();
-            playThreeBells();
-        }
-    };
-}
+}, 0);
 
 // Alternância de Abas
 window.switchTab = function (tabName) {
@@ -314,119 +295,69 @@ if (els.kitchenHistoryBar) {
     });
 }
 
-function playSingleBell(freq, startTime) {
-    if (!audioCtx) return;
-    try {
-        // Tom fundamental do sino
-        const osc1 = audioCtx.createOscillator();
-        const gain1 = audioCtx.createGain();
-        osc1.type = 'sine';
-        osc1.frequency.setValueAtTime(freq, startTime);
-
-        // Harmônico metálico do sino
-        const osc2 = audioCtx.createOscillator();
-        const gain2 = audioCtx.createGain();
-        osc2.type = 'triangle';
-        osc2.frequency.setValueAtTime(freq * 2.76, startTime);
-
-        // Ganho geral do toque
-        const masterGain = audioCtx.createGain();
-
-        osc1.connect(gain1);
-        gain1.connect(masterGain);
-
-        osc2.connect(gain2);
-        gain2.connect(masterGain);
-
-        masterGain.connect(audioCtx.destination);
-
-        // Curva de volume (Ataque rápido e ressonância suave do sino)
-        gain1.gain.setValueAtTime(0.85, startTime);
-        gain1.gain.exponentialRampToValueAtTime(0.001, startTime + 0.75);
-
-        gain2.gain.setValueAtTime(0.35, startTime);
-        gain2.gain.exponentialRampToValueAtTime(0.001, startTime + 0.35);
-
-        masterGain.gain.setValueAtTime(0.9, startTime);
-        masterGain.gain.linearRampToValueAtTime(0.9, startTime + 0.02);
-        masterGain.gain.exponentialRampToValueAtTime(0.001, startTime + 0.8);
-
-        osc1.start(startTime);
-        osc1.stop(startTime + 0.85);
-
-        osc2.start(startTime);
-        osc2.stop(startTime + 0.45);
-    } catch (e) {
-        console.warn("Erro ao tocar sino:", e);
+// --- CONEXÃO E SINCRONIZAÇÃO SUPABASE ---
+function connectSync() {
+    if (!window.CanelaSupabase) {
+        els.status.textContent = '● SERVIÇO DE CONEXÃO INDISPONÍVEL';
+        els.status.className = 'status-offline';
+        return;
     }
-}
-
-function playThreeBells() {
-    if (!audioCtx) {
-        audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+    if (syncClient) {
+        // O cliente de sincronização mantém o ciclo de reconexão.
+        // outra conexão durante pageshow/focus evita duas tentativas concorrentes.
+        return;
     }
-    if (audioCtx && audioCtx.state === 'suspended') {
-        audioCtx.resume();
-    }
-    if (!audioCtx) return;
-
-    const t = audioCtx.currentTime;
-    // Sino curto de passe de cozinha: dois impactos metálicos bem definidos.
-    playSingleBell(659.25, t);
-    playSingleBell(987.77, t + 0.28);
-}
-
-function notifySound() {
-    if (audioEnabled) {
-        playThreeBells();
-    }
-}
-
-// --- CONEXÃO MQTT E SINCRONIZAÇÃO ---
-function connectMQTT() {
     els.status.textContent = 'Conectando Servidor...';
     els.status.className = 'status-offline';
 
-    const uniqueKitchenClientId = 'canela_kitchen_' + Math.random().toString(36).substring(2, 10) + '_' + Date.now();
-    mqttClient = mqtt.connect('wss://broker.hivemq.com:8884/mqtt', {
-        clientId: uniqueKitchenClientId,
-        keepalive: 60,
-        reconnectPeriod: 2000,
-        clean: true
-    });
+    syncClient = CanelaSupabase.createClient();
 
-    mqttClient.on('connect', () => {
-        kitchenMqttOnline = true;
-        mqttClient.subscribe(topic, (err) => {
+    syncClient.on('connect', () => {
+        kitchenSyncOnline = true;
+        els.status.textContent = '● CONECTADO • SINCRONIZANDO';
+        els.status.className = 'status-online';
+        syncClient.subscribe(topic, (err) => {
             if (!err) {
                 els.status.textContent = '● CONECTADO (Aguardando Pedidos)';
                 els.status.className = 'status-online';
                 refreshKitchenSyncStatus();
                 publishUpdate({ type: 'REQUEST_SYNC' }, false);
                 flushKitchenOutbox();
+            } else {
+                kitchenSyncOnline = false;
+                els.status.textContent = '● FALHA AO SINCRONIZAR • RECONECTANDO';
+                els.status.className = 'status-offline';
             }
         });
     });
 
-    mqttClient.on('reconnect', () => {
-        kitchenMqttOnline = false;
+    syncClient.on('reconnect', () => {
+        kitchenSyncOnline = false;
         els.status.textContent = 'Reconectando...';
         els.status.className = 'status-offline';
     });
 
-    mqttClient.on('offline', () => {
-        kitchenMqttOnline = false;
+    syncClient.on('offline', () => {
+        kitchenSyncOnline = false;
         els.status.textContent = '● OFFLINE';
         els.status.className = 'status-offline';
     });
 
-    mqttClient.on('error', () => {
-        kitchenMqttOnline = false;
-        els.status.textContent = '● ERRO DE CONEXÃO';
+    syncClient.on('close', () => {
+        kitchenSyncOnline = false;
+        els.status.textContent = navigator.onLine ? 'Reconectando...' : '● SEM INTERNET';
         els.status.className = 'status-offline';
     });
 
-    mqttClient.on('message', (t, message) => {
+    syncClient.on('error', error => {
+        kitchenSyncOnline = false;
+        els.status.textContent = error && /PGRST205|sync_events|sync_state/.test(error.message || '')
+            ? '● BANCO AGUARDANDO CONFIGURAÇÃO'
+            : '● ERRO DE CONEXÃO';
+        els.status.className = 'status-offline';
+    });
+
+    syncClient.on('message', (t, message) => {
         if (t !== topic) return;
         try {
             const data = JSON.parse(message.toString());
@@ -538,10 +469,6 @@ function connectMQTT() {
                 publishUpdate({ type: 'ORDER_RECEIVED_ACK', orderId: safeId, updatedAt: mergedPedido.updatedAt || mergedPedido.timestamp || Date.now() }, false);
             }
 
-            if (isNewAction) {
-                notifySound();
-            }
-
         } catch (e) {
             console.error("Erro ao processar mensagem na cozinha:", e);
         }
@@ -555,11 +482,11 @@ async function publishUpdate(payload, saveLocally = true) {
         if (queued) {
             refreshKitchenSyncStatus();
             flushKitchenOutbox();
-        } else if (mqttClient && mqttClient.connected) {
-            mqttClient.publish(topic, JSON.stringify(payload), { qos: 1 });
+        } else if (syncClient && syncClient.connected) {
+            syncClient.publish(topic, JSON.stringify(payload), { qos: 1 });
         }
-    } else if (mqttClient && mqttClient.connected) {
-        mqttClient.publish(topic, JSON.stringify(payload), { qos: 1 });
+    } else if (syncClient && syncClient.connected) {
+        syncClient.publish(topic, JSON.stringify(payload), { qos: 1 });
     }
     if (saveLocally && payload.id) {
         globalOrders[payload.id] = payload;
@@ -576,7 +503,7 @@ async function refreshKitchenSyncStatus() {
     if (pending > 0) {
         els.status.textContent = `● ${pending} atualização(ões) pendente(s)`;
         els.status.className = 'status-pending';
-    } else if (kitchenMqttOnline) {
+    } else if (kitchenSyncOnline) {
         els.status.textContent = '● CONECTADO • SINCRONIZADO';
         els.status.className = 'status-online';
     }
@@ -584,14 +511,14 @@ async function refreshKitchenSyncStatus() {
 
 let kitchenOutboxFlushing = false;
 async function flushKitchenOutbox() {
-    if (kitchenOutboxFlushing || !window.CanelaPersistence || !mqttClient || !mqttClient.connected) return;
+    if (kitchenOutboxFlushing || !window.CanelaPersistence || !syncClient || !syncClient.connected) return;
     kitchenOutboxFlushing = true;
     try {
         const pending = await CanelaPersistence.listPending('cozinha');
         for (const entry of pending) {
-            if (!mqttClient.connected) break;
+            if (!syncClient.connected) break;
             await new Promise((resolve, reject) => {
-                mqttClient.publish(topic, JSON.stringify(entry.payload), { qos: 1 }, error => error ? reject(error) : resolve());
+                syncClient.publish(topic, JSON.stringify(entry.payload), { qos: 1 }, error => error ? reject(error) : resolve());
             });
             await CanelaPersistence.removePending(entry.id);
             refreshKitchenSyncStatus();
@@ -600,7 +527,7 @@ async function flushKitchenOutbox() {
         console.warn('Envios da cozinha continuarão pendentes:', error);
     } finally {
         kitchenOutboxFlushing = false;
-        if (mqttClient && mqttClient.connected) {
+        if (syncClient && syncClient.connected) {
             const remaining = await CanelaPersistence.listPending('cozinha');
             if (remaining.length > 0) setTimeout(flushKitchenOutbox, 0);
         }
@@ -1007,8 +934,13 @@ function setupProductPriceSettings() {
     if (!els.productPricesBtn) return;
     const close = () => els.productPricesOverlay.classList.add('hidden');
     const renderFields = () => {
-        els.productPricesList.innerHTML = Object.entries(PRODUCT_PRICE_DEFAULTS).map(([name, defaultPrice]) => `
-            <label><span>${escapeKitchenHtml(name)}</span><div class="price-input-wrap"><span>R$</span><input type="number" min="0" step="0.50" data-product-name="${escapeKitchenHtml(name)}" value="${Number(productPriceSettings.items[name] ?? defaultPrice).toFixed(2)}"></div></label>
+        els.productPricesList.innerHTML = Object.entries(PRODUCT_PRICE_GROUPS).map(([group, products]) => `
+            <section class="product-price-group">
+                <h3>${escapeKitchenHtml(group)}</h3>
+                ${Object.entries(products).map(([name, defaultPrice]) => `
+                    <label><span>${escapeKitchenHtml(name)}</span><div class="price-input-wrap"><span>R$</span><input type="number" min="0" step="0.50" data-product-name="${escapeKitchenHtml(name)}" value="${Number(productPriceSettings.items[name] ?? defaultPrice).toFixed(2)}"></div></label>
+                `).join('')}
+            </section>
         `).join('');
     };
     els.productPricesBtn.onclick = () => { renderFields(); els.productPricesOverlay.classList.remove('hidden'); };
@@ -1447,30 +1379,6 @@ function renderKitchenItem(item) {
         </li>`;
     }
 
-    if (name.startsWith('Panqueca de ')) {
-        const panquecaMatch = name.match(/^Panqueca de (Carne|Frango) \+ (.+?) \[(?:TIRAR:\s*([^\]]+)|COMPLETO)\]\s+-/);
-        const flavor = panquecaMatch ? panquecaMatch[1] : 'Não informado';
-        const rice = panquecaMatch ? panquecaMatch[2] : 'Não informado';
-        const removed = panquecaMatch && panquecaMatch[3]
-            ? panquecaMatch[3].split(',').map(value => value.trim())
-            : [];
-        const preparation = removed.length
-            ? `<span class="prep-block prep-remove"><b>Retirar</b><span>${removed.join(' • ')}</span></span>
-               <span class="prep-block"><b>Prato montado</b><span>Panqueca de ${flavor}</span></span>`
-            : `<span class="prep-block prep-complete"><b>Completo</b></span>`;
-
-        return `<li class="configured-item">
-            <span class="item-qty">${qty}x</span>
-            <span class="item-name">Panqueca de ${flavor}
-                <span class="prep-block"><b>Arroz</b><span>${rice}</span></span>
-                ${preparation}
-                ${itemNote}
-            </span>
-            <span class="prep-location ${consumption === 'Para Levar' ? 'to-go' : ''}">${consumption === 'Para Levar' ? '🛍️ PARA LEVAR' : '🍽️ COMER NO LOCAL'}</span>
-            ${readyAction}
-        </li>`;
-    }
-
     if (name.startsWith('Caldo ')) {
         const caldoMatch = name.match(/^Caldo\s+(.+?)\s+(350ml|500ml)\s+\((.+?)\)\s+-/);
         const flavor = caldoMatch ? caldoMatch[1] : 'Não informado';
@@ -1513,8 +1421,10 @@ function handleKitchenResume() {
     renderAll();
     keepScreenAlive();
 
-    if (mqttClient && mqttClient.connected) {
+    if (syncClient && syncClient.connected) {
         publishUpdate({ type: 'REQUEST_SYNC' }, false);
+    } else if (navigator.onLine) {
+        connectSync();
     }
 }
 
@@ -1528,23 +1438,23 @@ window.addEventListener('pageshow', handleKitchenResume);
 window.addEventListener('focus', handleKitchenResume);
 window.addEventListener('online', handleKitchenResume);
 window.addEventListener('offline', () => {
-    kitchenMqttOnline = false;
+    kitchenSyncOnline = false;
     els.status.textContent = '● SEM INTERNET';
     els.status.className = 'status-offline';
 });
 setInterval(() => {
-    if (!navigator.onLine && kitchenMqttOnline) {
-        kitchenMqttOnline = false;
+    if (!navigator.onLine && kitchenSyncOnline) {
+        kitchenSyncOnline = false;
         els.status.textContent = '● SEM INTERNET';
         els.status.className = 'status-offline';
     }
 }, 1000);
 setInterval(() => {
-    if (mqttClient && mqttClient.connected) flushKitchenOutbox();
+    if (syncClient && syncClient.connected) flushKitchenOutbox();
 }, 3000);
 setInterval(() => {
-    if (mqttClient && mqttClient.connected) publishUpdate({ type: 'REQUEST_SYNC' }, false);
-}, 8000);
+    if (syncClient && syncClient.connected) publishUpdate({ type: 'REQUEST_SYNC' }, false);
+}, 20000);
 
 document.body.addEventListener('click', keepScreenAlive);
 document.body.addEventListener('touchstart', keepScreenAlive);
@@ -1594,6 +1504,7 @@ function saveBeverageStock(broadcast = true, touchRevision = true) {
     if (touchRevision) beverageStock.updatedAt = Date.now();
     localStorage.setItem('canela_beverage_stock', JSON.stringify(beverageStock));
     if (window.CanelaPersistence) CanelaPersistence.saveSnapshot('beverage_stock', beverageStock);
+    if (window.CanelaSupabase) CanelaSupabase.state.save('beverage_stock', beverageStock).catch(error => console.warn('Estoque aguardando sincronização:', error));
     if (broadcast) publishStockSnapshot(true);
 }
 
@@ -1602,8 +1513,8 @@ function publishStockSnapshot(reliable = true) {
     const payload = { type: 'STOCK_UPDATE', stock: beverageStock };
     if (reliable) {
         publishUpdate(payload, false);
-    } else if (mqttClient && mqttClient.connected) {
-        mqttClient.publish(topic, JSON.stringify(payload), { qos: 1 });
+    } else if (syncClient && syncClient.connected) {
+        syncClient.publish(topic, JSON.stringify(payload), { qos: 1 });
     }
 }
 
