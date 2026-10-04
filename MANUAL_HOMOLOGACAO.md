@@ -35,6 +35,7 @@ Antes de começar, anote a quantidade de pedidos, a sequência de senhas e o est
 - [ ] **HOM-017 — Prato completo:** sem retiradas, confirmar o texto “Completo”.
 - [ ] **HOM-018 — Prato com retiradas:** conferir no painel as linhas “Retirar” e “Prato montado”, com os respectivos componentes.
 - [ ] **HOM-019 — Arroz destacado:** confirmar uma linha exclusiva para o tipo de arroz no painel.
+- [ ] **HOM-019A — Sem arroz:** selecionar “Não” em “Vai querer arroz?”, confirmar que o tipo fica desativado e que atendimento, carrinho e cozinha exibem “Sem arroz”.
 - [ ] **HOM-020 — Local destacado:** confirmar uma linha individual e destacada para consumo local/viagem em cada prato.
 - [ ] **HOM-021 — Quantidade:** cadastrar duas ou mais unidades e confirmar quantidade, subtotal e métricas.
 
@@ -95,7 +96,10 @@ Antes de começar, anote a quantidade de pedidos, a sequência de senhas e o est
 - [ ] **HOM-064 — Arroz por prato:** conferir Arroz Branco, Arroz com Brócolis e Baião de Dois separadamente dentro de Carne e Picanha.
 - [ ] **HOM-065 — Caldos:** conferir Carne, Quenga, Camarão e Frango, divididos em “Com acompanhamento” e “Sem acompanhamento”.
 - [ ] **HOM-066 — Tempo médio real:** comparar uma amostra usando `hora da entrega − hora de envio`.
-- [ ] **HOM-067 — Limpar histórico:** limpar somente após criar cópia/evidência; confirmar que entregues não reaparecem após aguardar e recarregar.
+- [ ] **HOM-067 — Salvar e limpar:** usar “Limpar e Salvar Histórico”; confirmar que o histórico só é limpo após a confirmação do Supabase e que falha de conexão mantém todos os entregues.
+- [ ] **HOM-067A — Segmentação diária:** acessar “Históricos Salvos” pelo botão do cabeçalho da cozinha e conferir, na página própria, data, Quinta/Sexta/Sábado/Domingo, mês, pedidos, itens e total daquele dia.
+- [ ] **HOM-067B — Reinício integrado:** após salvar, confirmar aba Entregues vazia, contador em zero e próximo pedido com senha #001 (sequência reiniciada em 000).
+- [ ] **HOM-067C — Segundo fechamento no mesmo dia:** salvar novos entregues na mesma data e confirmar que são acrescentados ao histórico diário sem apagar o primeiro lote.
 - [ ] **HOM-068 — Reiniciar senhas:** confirmar que o próximo pedido comum recebe #001.
 - [ ] **HOM-069 — Virada do dia:** simular/validar em ambiente controlado que a primeira senha de um novo dia reinicia em #001.
 

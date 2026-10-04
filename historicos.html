@@ -1,0 +1,49 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, viewport-fit=cover">
+    <title>Históricos Salvos - Canela de Fogo</title>
+    <link rel="icon" type="image/png" href="logo.png">
+    <link rel="stylesheet" href="historicos.css?v=20261004-1">
+</head>
+<body>
+    <header class="history-header">
+        <div class="history-brand">
+            <img src="logo.png" alt="Canela de Fogo">
+            <div><h1>Históricos • Canela de Fogo</h1><p>Análises e fechamentos diários</p></div>
+        </div>
+        <nav class="history-nav">
+            <a href="cozinha.html">Painel da Cozinha</a>
+            <a href="index.html">Cadastro de Pedidos</a>
+            <span id="history-status" class="history-status offline">Conectando...</span>
+        </nav>
+    </header>
+
+    <main class="history-page">
+        <section class="history-intro">
+            <div><span class="eyebrow">Arquivo operacional</span><h2>Históricos salvos</h2><p>Consulte os fechamentos por dia e mês. Esta área será ampliada com novas análises.</p></div>
+            <button id="refresh-history-btn" type="button">↻ Atualizar</button>
+        </section>
+
+        <section class="history-overview" aria-label="Resumo dos históricos">
+            <article><span>Dias salvos</span><strong id="archive-days-total">0</strong></article>
+            <article><span>Pedidos</span><strong id="archive-orders-total">0</strong></article>
+            <article><span>Itens</span><strong id="archive-items-total">0</strong></article>
+            <article><span>Valor registrado</span><strong id="archive-value-total">R$ 0,00</strong></article>
+        </section>
+
+        <section class="history-filters">
+            <label>Pesquisar<input id="archive-search" type="search" placeholder="Cliente, senha ou item..."></label>
+            <label>Mês<select id="archive-month-filter"><option value="">Todos os meses</option></select></label>
+        </section>
+
+        <section id="archived-history-list" class="archived-history-list" aria-live="polite">
+            <div class="archive-message">Carregando históricos salvos...</div>
+        </section>
+    </main>
+
+    <script src="supabase-sync.js?v=20261004-6"></script>
+    <script src="historicos.js?v=20261004-1"></script>
+</body>
+</html>

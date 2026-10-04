@@ -38,6 +38,29 @@
         }
     };
 
+    const historyApi = {
+        async archive(record) {
+            if (!record || !record.date || !record.orders) throw new Error('Histórico inválido para arquivamento');
+            const scope = `history-${record.date}`;
+            const current = await stateApi.load(scope);
+            const currentPayload = current && current.payload && typeof current.payload === 'object' ? current.payload : {};
+            const mergedOrders = { ...(currentPayload.orders || {}), ...(record.orders || {}) };
+            const payload = {
+                ...currentPayload,
+                ...record,
+                scope,
+                orders: mergedOrders,
+                orderCount: Object.keys(mergedOrders).length,
+                archivedAt: Date.now()
+            };
+            await stateApi.save(scope, payload);
+            return payload;
+        },
+        async list() {
+            return request('sync_state?scope=like.history-*&select=scope,payload,updated_at&order=scope.desc');
+        }
+    };
+
     function createClient() {
         const handlers = new Map();
         let polling = false;
@@ -145,5 +168,5 @@
         return client;
     }
 
-    window.CanelaSupabase = { createClient, state: stateApi };
+    window.CanelaSupabase = { createClient, state: stateApi, history: historyApi };
 })();

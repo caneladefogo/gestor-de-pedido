@@ -203,7 +203,8 @@ async function hydratePersistentOrders() {
                 CanelaSupabase.state.load('orders_atendimento'),
                 CanelaSupabase.state.load('orders_cozinha'),
                 CanelaSupabase.state.load('product_prices'),
-                CanelaSupabase.state.load('beverage_stock')
+                CanelaSupabase.state.load('beverage_stock'),
+                CanelaSupabase.state.load('password_sequence')
             ]);
             snapshots.slice(0, 2).forEach(snapshot => {
                 if (!snapshot || !snapshot.payload) return;
@@ -215,6 +216,16 @@ async function hydratePersistentOrders() {
             if (snapshots[3] && snapshots[3].payload) {
                 beverageStockState = snapshots[3].payload;
                 localStorage.setItem('canela_beverage_stock_view', JSON.stringify(beverageStockState));
+            }
+            if (snapshots[4] && snapshots[4].payload) {
+                const sequence = snapshots[4].payload;
+                const localResetAt = Number(localStorage.getItem('canela_senha_reset_at')) || 0;
+                if (Number(sequence.resetAt || 0) >= localResetAt) {
+                    globalSenhaCount = Math.max(0, Number(sequence.value) || 0);
+                    localStorage.setItem('canela_senha', String(globalSenhaCount));
+                    localStorage.setItem('canela_senha_date', sequence.date || new Date().toLocaleDateString('en-CA'));
+                    localStorage.setItem('canela_senha_reset_at', String(sequence.resetAt || Date.now()));
+                }
             }
         } catch (error) {
             console.warn('Estado remoto ainda indisponível:', error);
@@ -1333,13 +1344,21 @@ window.openProductOptions = function (productId, editIndex = null) {
         const noteStep = quantityStep + 1;
 
         els.optionsModalBody.innerHTML = `
-            <label><strong>1. Tipo de Arroz:</strong></label>
-            <select id="prato-arroz" style="width:100%; padding:0.8rem; margin:0.5rem 0 1rem 0; border-radius:8px;">
-                <option value="Baião">Baião de Dois</option>
-                <option value="Arroz Branco">Arroz Branco</option>
-                <option value="Arroz c/ Brócolis">Arroz com Brócolis</option>
-                <option value="Sem arroz">Sem arroz</option>
-            </select>
+            <div class="dish-rice-row">
+                <label><strong>1. Vai querer arroz?</strong>
+                    <select id="prato-quer-arroz">
+                        <option value="sim" selected>Sim</option>
+                        <option value="nao">Não</option>
+                    </select>
+                </label>
+                <label><strong>Tipo de Arroz:</strong>
+                    <select id="prato-arroz">
+                        <option value="Baião">Baião de Dois</option>
+                        <option value="Arroz Branco">Arroz Branco</option>
+                        <option value="Arroz c/ Brócolis">Arroz com Brócolis</option>
+                    </select>
+                </label>
+            </div>
             ${product.name.includes('Picanha') ? `<label><strong>2. Ponto da Picanha:</strong></label>
             <select id="picanha-point" class="dish-point-select">
                 <option value="Chapeiro define" selected>Chapeiro define</option>
@@ -1374,6 +1393,7 @@ window.openProductOptions = function (productId, editIndex = null) {
             </div>
             <div id="prato-price-preview" class="configured-product-price"></div>
         `;
+        document.getElementById('prato-quer-arroz').addEventListener('change', updateDishRiceChoice);
         document.querySelectorAll('input[name="prato-adicional"]').forEach(input => input.addEventListener('change', updatePratoPricePreview));
         document.getElementById('option-qty').addEventListener('input', updatePratoPricePreview);
         updatePratoPricePreview();
@@ -1400,7 +1420,12 @@ function prefillProductOptions(item, type) {
     } else {
         const riceMatch = name.match(/\+\s(.+?)\s\[(?:TIRAR:|COMPLETO)/);
         const removeMatch = name.match(/\[TIRAR:\s*([^\]]+)\]/);
-        if (riceMatch) document.getElementById('prato-arroz').value = riceMatch[1];
+        if (riceMatch) {
+            const noRice = riceMatch[1] === 'Sem arroz';
+            document.getElementById('prato-quer-arroz').value = noRice ? 'nao' : 'sim';
+            if (!noRice) document.getElementById('prato-arroz').value = riceMatch[1];
+            updateDishRiceChoice();
+        }
         const removed = removeMatch ? removeMatch[1].split(',').map(value => value.trim()) : [];
         document.querySelectorAll('input[name="prato-retira"]').forEach(input => input.checked = removed.includes(input.value));
         const additionsMatch = name.match(/\[ADICIONAIS:\s*([^\]]+)\]/i);
@@ -1456,6 +1481,15 @@ function updatePratoPricePreview() {
     preview.textContent = `Unitário: ${formatCurrency(unitPrice)} • Total: ${formatCurrency(unitPrice * quantity)}`;
 }
 
+function updateDishRiceChoice() {
+    const choice = document.getElementById('prato-quer-arroz');
+    const rice = document.getElementById('prato-arroz');
+    if (!choice || !rice) return;
+    const disabled = choice.value === 'nao';
+    rice.disabled = disabled;
+    rice.closest('label').classList.toggle('dish-rice-disabled', disabled);
+}
+
 window.changeOptionQty = function (delta) {
     const input = document.getElementById('option-qty');
     if (!input) return;
@@ -1488,7 +1522,9 @@ els.btnConfirmOptions.onclick = () => {
         commitAddToCart(product, nName, preco, getOptionQty());
 
     } else if (product.dynamic === "prato") {
-        const arroz = document.getElementById('prato-arroz').value;
+        const arroz = document.getElementById('prato-quer-arroz').value === 'nao'
+            ? 'Sem arroz'
+            : document.getElementById('prato-arroz').value;
         const local = document.getElementById('prato-local').value;
 
         const retiradas = Array.from(document.querySelectorAll('input[name="prato-retira"]:checked')).map(cb => cb.value);
@@ -1663,20 +1699,57 @@ function setupEventListeners() {
     };
 
     if (els.btnClearHistory) {
-        els.btnClearHistory.onclick = () => {
+        els.btnClearHistory.onclick = async () => {
             const entreguesList = Object.values(globalActiveOrders).filter(o => o.items.every(i => i.status === 'entregue') || o.deliveredAt);
             const entreguesCount = entreguesList.length;
             if (entreguesCount === 0) {
-                alert("Não há pedidos entregues no histórico para limpar.");
+                alert("Não há pedidos entregues para salvar.");
                 return;
             }
-            if (confirm(`Deseja limpar os ${entreguesCount} pedidos entregues do histórico? Os pedidos em aberto continuarão salvos.`)) {
-                const clearedAt = Date.now();
-                const clearedMarkers = Object.fromEntries(entreguesList.map(order => [order.id, clearedAt]));
-                applyDeletedOrderMarkers(clearedMarkers);
-                applyHistoryClear(clearedAt);
-                publishSync({ type: 'CLEAR_HISTORY', clearedAt, deletedOrderIds: clearedMarkers });
-                renderActiveOrders();
+            const date = new Date();
+            const dateParts = Object.fromEntries(new Intl.DateTimeFormat('en-CA', {
+                timeZone: 'America/Manaus', year: 'numeric', month: '2-digit', day: '2-digit'
+            }).formatToParts(date).filter(part => part.type !== 'literal').map(part => [part.type, part.value]));
+            const dateKey = `${dateParts.year}-${dateParts.month}-${dateParts.day}`;
+            const weekdayRaw = new Intl.DateTimeFormat('pt-BR', { timeZone: 'America/Manaus', weekday: 'long' }).format(date);
+            const monthRaw = new Intl.DateTimeFormat('pt-BR', { timeZone: 'America/Manaus', month: 'long' }).format(date);
+            const normalizedWeekday = weekdayRaw.replace('-feira', '');
+            const day = normalizedWeekday.charAt(0).toUpperCase() + normalizedWeekday.slice(1);
+            if (confirm(`Salvar ${entreguesCount} pedidos no histórico de ${day}, ${dateKey.split('-').reverse().join('/')}, limpar a aba Entregues e reiniciar as senhas?`)) {
+                const originalText = els.btnClearHistory.textContent;
+                els.btnClearHistory.disabled = true;
+                els.btnClearHistory.textContent = 'Salvando...';
+                try {
+                    if (!window.CanelaSupabase || !CanelaSupabase.history) throw new Error('Banco de históricos indisponível');
+                    const orders = Object.fromEntries(entreguesList.map(order => [order.id || order.senha, JSON.parse(JSON.stringify(order))]));
+                    await CanelaSupabase.history.archive({
+                        date: dateKey,
+                        day,
+                        month: monthRaw.charAt(0).toUpperCase() + monthRaw.slice(1),
+                        year: Number(dateParts.year),
+                        orders,
+                        savedBy: `atendimento-${waiterName || 'geral'}`
+                    });
+                    const clearedAt = Date.now();
+                    await CanelaSupabase.state.save('password_sequence', { value: 0, date: dateKey, resetAt: clearedAt });
+                    const clearedMarkers = Object.fromEntries(entreguesList.map(order => [order.id, clearedAt]));
+                    applyDeletedOrderMarkers(clearedMarkers);
+                    applyHistoryClear(clearedAt);
+                    publishSync({ type: 'CLEAR_HISTORY', clearedAt, deletedOrderIds: clearedMarkers });
+                    globalSenhaCount = 0;
+                    localStorage.setItem('canela_senha', '0');
+                    localStorage.setItem('canela_senha_date', dateKey);
+                    localStorage.setItem('canela_senha_reset_at', String(clearedAt));
+                    publishSync({ type: 'RESET_PASSWORDS', date: dateKey, resetAt: clearedAt });
+                    renderActiveOrders();
+                    alert(`Histórico salvo em ${day}, ${dateKey.split('-').reverse().join('/')}. A aba Entregues foi limpa e a sequência voltou para 000.`);
+                } catch (error) {
+                    console.error('Falha ao salvar histórico:', error);
+                    alert('O histórico não foi limpo porque não foi possível confirmá-lo no banco. Verifique a conexão e tente novamente.');
+                } finally {
+                    els.btnClearHistory.disabled = false;
+                    els.btnClearHistory.textContent = originalText;
+                }
             }
         };
     }
@@ -1725,6 +1798,13 @@ function assignOrderSenha() {
     globalSenhaCount = maxKnown + 1;
     localStorage.setItem('canela_senha', globalSenhaCount);
     localStorage.setItem('canela_senha_date', today);
+    if (window.CanelaSupabase) {
+        CanelaSupabase.state.save('password_sequence', {
+            value: globalSenhaCount,
+            date: today,
+            resetAt: Number(localStorage.getItem('canela_senha_reset_at')) || Date.now()
+        }).catch(error => console.warn('Sequência aguardando sincronização:', error));
+    }
     return globalSenhaCount.toString().padStart(3, '0');
 }
 

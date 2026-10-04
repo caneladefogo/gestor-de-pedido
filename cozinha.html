@@ -6,7 +6,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
     <title>Painel da Cozinha - Canela de Fogo</title>
     <link rel="icon" type="image/png" href="logo.png">
-    <link rel="stylesheet" href="cozinha.css?v=20261004-4">
+    <link rel="stylesheet" href="cozinha.css?v=20261004-7">
 </head>
 
 <body>
@@ -22,6 +22,7 @@
             <button id="beverage-stock-btn" class="stock-header-btn">Estoque de Bebidas</button>
             <button id="prep-settings-btn" class="prep-settings-btn">Tempos de preparo</button>
             <button id="product-prices-btn" class="product-prices-btn">Preços dos itens</button>
+            <a href="historicos.html" class="module-link history-module-link">Históricos Salvos</a>
             <a href="index.html" class="module-link">Cadastro de Pedidos</a>
             <div id="status" class="status-offline">Aguardando Início...</div>
         </div>
@@ -155,7 +156,7 @@
                 <div id="delivered-item-metrics" class="delivered-item-metrics"></div>
                 <div id="time-intelligence-metrics" class="time-intelligence-metrics"></div>
                 <div class="history-actions">
-                    <button id="kitchen-clear-history-btn">🧹 Limpar Histórico Entregue</button>
+                    <button id="kitchen-clear-history-btn">💾 Limpar e Salvar Histórico</button>
                     <button id="reset-passwords-btn" class="reset-passwords-btn">🔢 Reiniciar Senhas</button>
                 </div>
             </div>
@@ -170,7 +171,6 @@
         <div class="column" id="entregues-container" style="display:none;">
             <!-- Itens Entregues -->
         </div>
-
         <div class="column new-orders" id="chapeiro-container" style="display:none;">
             <!-- Itens destinados à chapa -->
         </div>
@@ -184,9 +184,9 @@
         </div>
     </main>
 
-    <script src="supabase-sync.js?v=20261004-4"></script>
-    <script src="persistence.js?v=20261004-4"></script>
-    <script src="cozinha.js?v=20261004-4"></script>
+    <script src="supabase-sync.js?v=20261004-6"></script>
+    <script src="persistence.js?v=20261004-6"></script>
+    <script src="cozinha.js?v=20261004-7"></script>
 </body>
 
 </html>

@@ -542,31 +542,80 @@ if (els.kitchenSearch) {
     };
 }
 
-// Limpar Histórico na Cozinha
+function getOperationPeriod(timestamp = Date.now()) {
+    const date = new Date(timestamp);
+    const parts = Object.fromEntries(new Intl.DateTimeFormat('en-CA', {
+        timeZone: 'America/Manaus', year: 'numeric', month: '2-digit', day: '2-digit'
+    }).formatToParts(date).filter(part => part.type !== 'literal').map(part => [part.type, part.value]));
+    const dateKey = `${parts.year}-${parts.month}-${parts.day}`;
+    const weekdayRaw = new Intl.DateTimeFormat('pt-BR', { timeZone: 'America/Manaus', weekday: 'long' }).format(date).replace('-feira', '');
+    const monthRaw = new Intl.DateTimeFormat('pt-BR', { timeZone: 'America/Manaus', month: 'long' }).format(date);
+    return {
+        date: dateKey,
+        day: weekdayRaw.charAt(0).toUpperCase() + weekdayRaw.slice(1),
+        month: monthRaw.charAt(0).toUpperCase() + monthRaw.slice(1),
+        year: Number(parts.year)
+    };
+}
+
+async function archiveDeliveredOrders(entreguesList) {
+    if (!window.CanelaSupabase || !CanelaSupabase.history) throw new Error('Banco de históricos indisponível');
+    const period = getOperationPeriod();
+    const orders = Object.fromEntries(entreguesList.map(order => [order.id || order.senha, JSON.parse(JSON.stringify(order))]));
+    return CanelaSupabase.history.archive({
+        ...period,
+        orders,
+        savedBy: 'painel-cozinha'
+    });
+}
+
+// Arquivar e limpar histórico na cozinha
 if (els.kitchenClearHistoryBtn) {
-    els.kitchenClearHistoryBtn.onclick = () => {
+    els.kitchenClearHistoryBtn.onclick = async () => {
         const entreguesList = Object.values(globalOrders).filter(o => o.items.every(i => i.status === 'entregue') || o.deliveredAt);
         if (entreguesList.length === 0) {
-            alert("Não há pedidos no histórico de entregues para limpar.");
+            alert("Não há pedidos entregues para salvar.");
             return;
         }
-        if (confirm(`Deseja limpar os ${entreguesList.length} pedidos entregues? Os pedidos em operação permanecerão salvos.`)) {
-            const clearedAt = Date.now();
-            const clearedMarkers = Object.fromEntries(entreguesList.map(order => [order.id, clearedAt]));
-            applyDeletedOrderMarkers(clearedMarkers);
-            applyHistoryClear(clearedAt);
-            publishUpdate({ type: 'CLEAR_HISTORY', clearedAt, deletedOrderIds: clearedMarkers }, false);
-            renderAll();
+        const period = getOperationPeriod();
+        if (confirm(`Salvar ${entreguesList.length} pedidos no histórico de ${period.day}, ${period.date.split('-').reverse().join('/')}, limpar a aba Entregues e reiniciar as senhas?`)) {
+            const originalText = els.kitchenClearHistoryBtn.textContent;
+            els.kitchenClearHistoryBtn.disabled = true;
+            els.kitchenClearHistoryBtn.textContent = 'Salvando histórico...';
+            try {
+                await archiveDeliveredOrders(entreguesList);
+                const clearedAt = Date.now();
+                await CanelaSupabase.state.save('password_sequence', { value: 0, date: period.date, resetAt: clearedAt });
+                const clearedMarkers = Object.fromEntries(entreguesList.map(order => [order.id, clearedAt]));
+                applyDeletedOrderMarkers(clearedMarkers);
+                applyHistoryClear(clearedAt);
+                publishUpdate({ type: 'CLEAR_HISTORY', clearedAt, deletedOrderIds: clearedMarkers }, false);
+                publishUpdate({ type: 'RESET_PASSWORDS', date: period.date, resetAt: clearedAt }, false);
+                renderAll();
+                alert(`Histórico salvo em ${period.day}, ${period.date.split('-').reverse().join('/')}. A aba Entregues foi limpa e a sequência voltou para 000.`);
+            } catch (error) {
+                console.error('Falha ao salvar histórico:', error);
+                alert('O histórico não foi limpo porque não foi possível confirmá-lo no banco. Verifique a conexão e tente novamente.');
+            } finally {
+                els.kitchenClearHistoryBtn.disabled = false;
+                els.kitchenClearHistoryBtn.textContent = originalText;
+            }
         }
     };
 }
 
 if (els.resetPasswordsBtn) {
-    els.resetPasswordsBtn.onclick = () => {
+    els.resetPasswordsBtn.onclick = async () => {
         if (!confirm('Reiniciar a sequência? O próximo pedido enviado receberá a senha #001.')) return;
         const date = new Date().toLocaleDateString('en-CA');
-        publishUpdate({ type: 'RESET_PASSWORDS', date, resetAt: Date.now() }, false);
-        alert('Sequência reiniciada. O próximo pedido receberá a senha #001.');
+        const resetAt = Date.now();
+        try {
+            await CanelaSupabase.state.save('password_sequence', { value: 0, date, resetAt });
+            publishUpdate({ type: 'RESET_PASSWORDS', date, resetAt }, false);
+            alert('Sequência reiniciada. O próximo pedido receberá a senha #001.');
+        } catch (error) {
+            alert('Não foi possível confirmar o reinício no banco. Tente novamente.');
+        }
     };
 }
 
