@@ -5,7 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, viewport-fit=cover">
     <title>Históricos Salvos - Canela de Fogo</title>
     <link rel="icon" type="image/png" href="logo.png">
-    <link rel="stylesheet" href="historicos.css?v=20261004-1">
+    <link rel="stylesheet" href="historicos.css?v=20261010-1">
 </head>
 <body>
     <header class="history-header">
@@ -38,12 +38,21 @@
             <label>Mês<select id="archive-month-filter"><option value="">Todos os meses</option></select></label>
         </section>
 
+        <section class="history-delete-toolbar" aria-label="Limpeza dos históricos salvos">
+            <div><strong>Limpar históricos</strong><span id="archive-selection-label">Nenhum dia selecionado</span></div>
+            <div class="history-delete-actions">
+                <button id="select-visible-history-btn" type="button">Selecionar exibidos</button>
+                <button id="delete-selected-history-btn" class="danger" type="button" disabled>🗑 Limpar selecionados</button>
+                <button id="delete-all-history-btn" class="danger-outline" type="button">Limpar todo o histórico</button>
+            </div>
+        </section>
+
         <section id="archived-history-list" class="archived-history-list" aria-live="polite">
             <div class="archive-message">Carregando históricos salvos...</div>
         </section>
     </main>
 
-    <script src="supabase-sync.js?v=20261004-6"></script>
-    <script src="historicos.js?v=20261004-1"></script>
+    <script src="supabase-sync.js?v=20261010-1"></script>
+    <script src="historicos.js?v=20261010-1"></script>
 </body>
 </html>

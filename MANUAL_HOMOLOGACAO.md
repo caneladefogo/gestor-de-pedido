@@ -100,6 +100,11 @@ Antes de começar, anote a quantidade de pedidos, a sequência de senhas e o est
 - [ ] **HOM-067A — Segmentação diária:** acessar “Históricos Salvos” pelo botão do cabeçalho da cozinha e conferir, na página própria, data, Quinta/Sexta/Sábado/Domingo, mês, pedidos, itens e total daquele dia.
 - [ ] **HOM-067B — Reinício integrado:** após salvar, confirmar aba Entregues vazia, contador em zero e próximo pedido com senha #001 (sequência reiniciada em 000).
 - [ ] **HOM-067C — Segundo fechamento no mesmo dia:** salvar novos entregues na mesma data e confirmar que são acrescentados ao histórico diário sem apagar o primeiro lote.
+- [ ] **HOM-067D — Limpar um dia salvo:** na página “Históricos Salvos”, selecionar apenas um dia, limpar e confirmar que os outros dias permanecem intactos.
+- [ ] **HOM-067E — Limpar vários dias salvos:** selecionar dois ou mais dias, confirmar a limpeza e conferir que somente os selecionados desapareceram.
+- [ ] **HOM-067F — Limpar todos os históricos:** em ambiente controlado, usar “Limpar todo o histórico”; cancelar uma vez para conferir a proteção e depois confirmar a ação.
+- [ ] **HOM-067G — Persistência da limpeza:** após qualquer limpeza, recarregar a página e abrir o histórico em outro dispositivo; os dias apagados não podem reaparecer.
+- [ ] **HOM-067H — Filtros e seleção:** aplicar mês ou busca, usar “Selecionar visíveis” e conferir que somente os dias exibidos são marcados.
 - [ ] **HOM-068 — Reiniciar senhas:** confirmar que o próximo pedido comum recebe #001.
 - [ ] **HOM-069 — Virada do dia:** simular/validar em ambiente controlado que a primeira senha de um novo dia reinicia em #001.
 

@@ -51,13 +51,36 @@
                 scope,
                 orders: mergedOrders,
                 orderCount: Object.keys(mergedOrders).length,
+                deleted: false,
+                deletedAt: null,
                 archivedAt: Date.now()
             };
             await stateApi.save(scope, payload);
             return payload;
         },
         async list() {
-            return request('sync_state?scope=like.history-*&select=scope,payload,updated_at&order=scope.desc');
+            const rows = await request('sync_state?scope=like.history-*&select=scope,payload,updated_at&order=scope.desc');
+            return (rows || []).filter(row => !(row.payload && row.payload.deleted));
+        },
+        async remove(scopes) {
+            const targets = [...new Set((scopes || []).filter(scope => /^history-\d{4}-\d{2}-\d{2}$/.test(scope)))];
+            if (!targets.length) throw new Error('Nenhum histórico válido selecionado');
+            const deletedAt = Date.now();
+            for (const scope of targets) {
+                await stateApi.save(scope, {
+                    scope,
+                    date: scope.replace(/^history-/, ''),
+                    orders: {},
+                    orderCount: 0,
+                    deleted: true,
+                    deletedAt
+                });
+                const check = await stateApi.load(scope);
+                if (!check || !check.payload || !check.payload.deleted || Object.keys(check.payload.orders || {}).length) {
+                    throw new Error('O banco não confirmou a limpeza do histórico.');
+                }
+            }
+            return targets.length;
         }
     };
 

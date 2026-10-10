@@ -4,6 +4,10 @@ const historyEls = {
     search: document.getElementById('archive-search'),
     month: document.getElementById('archive-month-filter'),
     refresh: document.getElementById('refresh-history-btn'),
+    selectionLabel: document.getElementById('archive-selection-label'),
+    selectVisible: document.getElementById('select-visible-history-btn'),
+    deleteSelected: document.getElementById('delete-selected-history-btn'),
+    deleteAll: document.getElementById('delete-all-history-btn'),
     days: document.getElementById('archive-days-total'),
     orders: document.getElementById('archive-orders-total'),
     items: document.getElementById('archive-items-total'),
@@ -12,6 +16,7 @@ const historyEls = {
 
 let historyRows = [];
 let historyClient = null;
+const selectedHistoryScopes = new Set();
 
 function escapeHistoryHtml(value) {
     return String(value ?? '').replace(/[&<>'"]/g, character => ({ '&':'&amp;','<':'&lt;','>':'&gt;',"'":'&#39;','"':'&quot;' })[character]);
@@ -43,10 +48,10 @@ function populateMonths(rows) {
     if (months.includes(current)) historyEls.month.value = current;
 }
 
-function renderHistories() {
+function getFilteredHistoryRows() {
     const query = historyEls.search.value.trim().toLowerCase();
     const month = historyEls.month.value;
-    const rows = historyRows.filter(row => {
+    return historyRows.filter(row => {
         const archive = row.payload || {};
         if (month && !String(archive.date || '').startsWith(month)) return false;
         if (!query) return true;
@@ -56,7 +61,22 @@ function renderHistories() {
             return searchable.includes(query);
         });
     });
+}
+
+function updateDeleteControls() {
+    const selectedCount = selectedHistoryScopes.size;
+    historyEls.selectionLabel.textContent = selectedCount
+        ? `${selectedCount} dia${selectedCount === 1 ? '' : 's'} selecionado${selectedCount === 1 ? '' : 's'}`
+        : 'Nenhum dia selecionado';
+    historyEls.deleteSelected.disabled = selectedCount === 0;
+    historyEls.deleteAll.disabled = historyRows.length === 0;
+    historyEls.selectVisible.disabled = getFilteredHistoryRows().length === 0;
+}
+
+function renderHistories() {
+    const rows = getFilteredHistoryRows();
     updateOverview(rows);
+    updateDeleteControls();
     if (!rows.length) {
         historyEls.list.innerHTML = `<div class="archive-message">${historyRows.length ? 'Nenhum histórico corresponde aos filtros.' : 'Nenhum histórico diário foi salvo ainda.'}</div>`;
         return;
@@ -68,8 +88,42 @@ function renderHistories() {
         const total = orders.reduce((sum,order) => sum + (Number(order.total)||0),0);
         const date = archive.date ? archive.date.split('-').reverse().join('/') : row.scope;
         const orderRows = orders.map(order => `<div class="archive-order-row"><strong>#${escapeHistoryHtml(order.senha || '---')} · ${escapeHistoryHtml(order.clientName || 'Cliente')}</strong><span>${(order.items || []).map(item => `${Number(item.qty)||0}x ${escapeHistoryHtml(item.product && item.product.name || 'Item')}`).join(' • ')}</span><b>${currency(order.total)}</b></div>`).join('');
-        return `<details class="archive-day-card"><summary><span class="archive-date"><strong>${escapeHistoryHtml(archive.day || 'Dia')} · ${date}</strong><small>${escapeHistoryHtml(archive.month || '')} de ${escapeHistoryHtml(archive.year || '')}</small></span><span class="archive-summary">${orders.length} pedidos · ${itemCount} itens · ${currency(total)}</span></summary><div class="archive-orders-list">${orderRows}</div></details>`;
+        return `<details class="archive-day-card"><summary><input class="archive-select" type="checkbox" data-scope="${escapeHistoryHtml(row.scope)}" aria-label="Selecionar histórico de ${date}" ${selectedHistoryScopes.has(row.scope) ? 'checked' : ''}><span class="archive-date"><strong>${escapeHistoryHtml(archive.day || 'Dia')} · ${date}</strong><small>${escapeHistoryHtml(archive.month || '')} de ${escapeHistoryHtml(archive.year || '')}</small></span><span class="archive-summary">${orders.length} pedidos · ${itemCount} itens · ${currency(total)}</span></summary><div class="archive-orders-list">${orderRows}</div></details>`;
     }).join('');
+    historyEls.list.querySelectorAll('.archive-select').forEach(input => {
+        input.addEventListener('click', event => event.stopPropagation());
+        input.addEventListener('change', event => {
+            if (event.target.checked) selectedHistoryScopes.add(event.target.dataset.scope);
+            else selectedHistoryScopes.delete(event.target.dataset.scope);
+            updateDeleteControls();
+        });
+    });
+}
+
+async function deleteHistories(scopes) {
+    const targets = [...new Set(scopes)].filter(scope => historyRows.some(row => row.scope === scope));
+    if (!targets.length) return;
+    const label = targets.length === historyRows.length
+        ? `todo o histórico salvo (${targets.length} dias)`
+        : `${targets.length} dia${targets.length === 1 ? '' : 's'} selecionado${targets.length === 1 ? '' : 's'}`;
+    if (!confirm(`Excluir definitivamente ${label}? Esta ação não poderá ser desfeita.`)) return;
+    [historyEls.deleteSelected, historyEls.deleteAll, historyEls.selectVisible].forEach(button => button.disabled = true);
+    historyEls.status.className = 'history-status offline';
+    historyEls.status.textContent = 'Excluindo...';
+    try {
+        await CanelaSupabase.history.remove(targets);
+        targets.forEach(scope => selectedHistoryScopes.delete(scope));
+        if (historyClient && historyClient.connected) {
+            historyClient.publish('caneladefogo/pedidos/sync', JSON.stringify({ type:'HISTORY_DELETE', scopes:targets, deletedAt:Date.now() }));
+        }
+        await loadHistories();
+        alert(`${targets.length} histórico${targets.length === 1 ? '' : 's'} excluído${targets.length === 1 ? '' : 's'} com sucesso.`);
+    } catch (error) {
+        console.error('Erro ao excluir históricos:',error);
+        historyEls.status.textContent = '● Falha na exclusão';
+        alert(error.message || 'Não foi possível excluir os históricos. Tente novamente.');
+        updateDeleteControls();
+    }
 }
 
 async function loadHistories() {
@@ -79,6 +133,8 @@ async function loadHistories() {
     try {
         if (!window.CanelaSupabase || !CanelaSupabase.history) throw new Error('Supabase indisponível');
         historyRows = await CanelaSupabase.history.list();
+        const validScopes = new Set(historyRows.map(row => row.scope));
+        [...selectedHistoryScopes].forEach(scope => { if (!validScopes.has(scope)) selectedHistoryScopes.delete(scope); });
         populateMonths(historyRows);
         renderHistories();
         historyEls.status.className = 'history-status online';
@@ -93,12 +149,18 @@ async function loadHistories() {
 historyEls.search.addEventListener('input',renderHistories);
 historyEls.month.addEventListener('change',renderHistories);
 historyEls.refresh.addEventListener('click',loadHistories);
+historyEls.selectVisible.addEventListener('click',() => {
+    getFilteredHistoryRows().forEach(row => selectedHistoryScopes.add(row.scope));
+    renderHistories();
+});
+historyEls.deleteSelected.addEventListener('click',() => deleteHistories([...selectedHistoryScopes]));
+historyEls.deleteAll.addEventListener('click',() => deleteHistories(historyRows.map(row => row.scope)));
 
 if (window.CanelaSupabase) {
     historyClient = CanelaSupabase.createClient();
     historyClient.on('connect',loadHistories);
     historyClient.on('message',(_topic,message) => {
-        try { const data=JSON.parse(message.toString()); if(data.type==='CLEAR_HISTORY') loadHistories(); } catch (_) {}
+        try { const data=JSON.parse(message.toString()); if(data.type==='CLEAR_HISTORY' || data.type==='HISTORY_DELETE') loadHistories(); } catch (_) {}
     });
     historyClient.on('offline',() => { historyEls.status.className='history-status offline'; historyEls.status.textContent='● Sem conexão'; });
 } else { loadHistories(); }
