@@ -1374,6 +1374,14 @@ button, a { -webkit-tap-highlight-color: transparent; }
     cursor: pointer;
 }
 .notification-modal > h2:first-of-type { padding-right: 44px; }
+.history-date-modal { width:min(92vw,460px); text-align:left; }
+.history-date-modal p { margin:.25rem 0 1.1rem; color:#6f6669; line-height:1.45; }
+.history-date-modal label { display:block; margin-bottom:.4rem; color:#4d090e; }
+.history-date-modal input[type="date"] { width:100%; min-height:52px; box-sizing:border-box; padding:.75rem .9rem; border:1px solid #d8cfca; border-radius:12px; background:#fff; color:#2f292b; font:inherit; font-weight:700; }
+.history-date-actions { display:grid; grid-template-columns:1fr 1fr; gap:.7rem; margin-top:1.2rem; }
+.history-date-actions button { min-height:48px; border:0; border-radius:12px; font:inherit; font-weight:800; cursor:pointer; }
+.history-date-actions button:first-child { background:#eee8e4; color:#5d5155; }
+.history-date-actions button:last-child { background:#74131b; color:#fff; }
 .cart-modal-header { padding-right: 58px; }
 #options-modal-body select {
     width: 100%;

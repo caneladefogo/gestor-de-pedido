@@ -6,7 +6,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
     <title>Pedidos - Canela de Fogo</title>
     <link rel="icon" type="image/png" href="logo.png">
-    <link rel="stylesheet" href="style.css?v=20261004-6">
+    <link rel="stylesheet" href="style.css?v=20261010-1">
 </head>
 
 <body>
@@ -198,6 +198,20 @@
         </div>
     </div>
 
+    <div id="history-date-modal" class="notification-overlay hidden">
+        <div class="notification-modal history-date-modal" role="dialog" aria-modal="true" aria-labelledby="attendant-history-date-title">
+            <button type="button" id="close-history-date-x" class="dialog-close-x" aria-label="Fechar seleção da data">✕</button>
+            <h2 id="attendant-history-date-title">Data do histórico</h2>
+            <p>Informe o dia ao qual os pedidos entregues pertencem.</p>
+            <label for="attendant-history-reference-date"><strong>Dia de referência</strong></label>
+            <input id="attendant-history-reference-date" type="date" required>
+            <div class="history-date-actions">
+                <button type="button" id="cancel-attendant-history-date">Cancelar</button>
+                <button type="button" id="confirm-attendant-history-date">Continuar</button>
+            </div>
+        </div>
+    </div>
+
     <!-- Modal de edição dos dados do cliente -->
     <div id="edit-customer-modal" class="notification-overlay hidden">
         <div class="notification-modal customer-edit-modal">
@@ -281,7 +295,7 @@
 
     <script src="supabase-sync.js?v=20261010-1"></script>
     <script src="persistence.js?v=20261004-6"></script>
-    <script src="app.js?v=20261004-6"></script>
+    <script src="app.js?v=20261010-1"></script>
 </body>
 
 </html>

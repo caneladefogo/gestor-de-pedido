@@ -1781,6 +1781,14 @@ button:active, .module-link:active, .tab-btn:active, .icon-action-btn:active { t
     cursor: pointer;
 }
 #kitchen-clear-history-btn { background: #c0392b; }
+.history-date-modal { position:relative; width:min(92vw,460px); padding:1.6rem; }
+.history-date-modal p { margin:.25rem 0 1.1rem; color:#6f6669; }
+.history-date-modal label { display:block; margin-bottom:.4rem; color:var(--flat-wine-dark); font-weight:800; }
+.history-date-modal input[type="date"] { width:100%; min-height:52px; box-sizing:border-box; padding:.75rem .9rem; border:1px solid #d8cfca; border-radius:12px; background:#fff; color:#2f292b; font:inherit; font-weight:700; }
+.history-date-actions { display:grid; grid-template-columns:1fr 1fr; gap:.7rem; margin-top:1.2rem; }
+.history-date-actions button { min-height:48px; border:0; border-radius:12px; font:inherit; font-weight:800; cursor:pointer; }
+.history-date-actions button:first-child { background:#eee8e4; color:#5d5155; }
+.history-date-actions button:last-child { background:#74131b; color:#fff; }
 .delivered-metrics span { background: #e2f3e8; color: #276342; border-radius: 10px; }
 .delivered-item-card { border: 0; border-radius: 14px; background: #d7eddf; color: #244f37; }
 .delivered-item-group em, .delivered-item-group b { color: #244f37; }

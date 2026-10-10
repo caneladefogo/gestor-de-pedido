@@ -21,6 +21,11 @@ const els = {
     kitchenHistoryBar: document.getElementById('kitchen-history-bar'),
     kitchenTotalEntreguesVal: document.getElementById('kitchen-total-entregues-val'),
     kitchenClearHistoryBtn: document.getElementById('kitchen-clear-history-btn'),
+    historyDateOverlay: document.getElementById('history-date-overlay'),
+    historyReferenceDate: document.getElementById('history-reference-date'),
+    closeHistoryDateBtn: document.getElementById('close-history-date-btn'),
+    cancelHistoryDateBtn: document.getElementById('cancel-history-date-btn'),
+    confirmHistoryDateBtn: document.getElementById('confirm-history-date-btn'),
     resetPasswordsBtn: document.getElementById('reset-passwords-btn'),
     prepSettingsBtn: document.getElementById('prep-settings-btn'),
     prepSettingsOverlay: document.getElementById('prep-settings-overlay'),
@@ -558,9 +563,17 @@ function getOperationPeriod(timestamp = Date.now()) {
     };
 }
 
-async function archiveDeliveredOrders(entreguesList) {
+function getOperationPeriodFromDate(dateKey) {
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(dateKey || '')) throw new Error('Selecione uma data válida.');
+    const date = new Date(`${dateKey}T12:00:00-04:00`);
+    if (Number.isNaN(date.getTime())) throw new Error('Selecione uma data válida.');
+    const period = getOperationPeriod(date.getTime());
+    if (period.date !== dateKey) throw new Error('Selecione uma data válida.');
+    return period;
+}
+
+async function archiveDeliveredOrders(entreguesList, period) {
     if (!window.CanelaSupabase || !CanelaSupabase.history) throw new Error('Banco de históricos indisponível');
-    const period = getOperationPeriod();
     const orders = Object.fromEntries(entreguesList.map(order => [order.id || order.senha, JSON.parse(JSON.stringify(order))]));
     return CanelaSupabase.history.archive({
         ...period,
@@ -569,33 +582,68 @@ async function archiveDeliveredOrders(entreguesList) {
     });
 }
 
+let pendingHistoryOrders = [];
+function closeHistoryDateDialog() {
+    els.historyDateOverlay.classList.add('hidden');
+    pendingHistoryOrders = [];
+}
+
 // Arquivar e limpar histórico na cozinha
 if (els.kitchenClearHistoryBtn) {
-    els.kitchenClearHistoryBtn.onclick = async () => {
+    els.kitchenClearHistoryBtn.onclick = () => {
         const entreguesList = Object.values(globalOrders).filter(o => o.items.every(i => i.status === 'entregue') || o.deliveredAt);
         if (entreguesList.length === 0) {
             alert("Não há pedidos entregues para salvar.");
             return;
         }
-        const period = getOperationPeriod();
+        pendingHistoryOrders = entreguesList;
+        const today = getOperationPeriod().date;
+        els.historyReferenceDate.max = today;
+        els.historyReferenceDate.value = today;
+        els.historyDateOverlay.classList.remove('hidden');
+        requestAnimationFrame(() => els.historyReferenceDate.focus());
+    };
+}
+
+if (els.closeHistoryDateBtn) els.closeHistoryDateBtn.onclick = closeHistoryDateDialog;
+if (els.cancelHistoryDateBtn) els.cancelHistoryDateBtn.onclick = closeHistoryDateDialog;
+if (els.historyDateOverlay) els.historyDateOverlay.onclick = event => { if (event.target === els.historyDateOverlay) closeHistoryDateDialog(); };
+
+if (els.confirmHistoryDateBtn) {
+    els.confirmHistoryDateBtn.onclick = async () => {
+        let period;
+        try {
+            period = getOperationPeriodFromDate(els.historyReferenceDate.value);
+            if (period.date > getOperationPeriod().date) throw new Error('A data do histórico não pode estar no futuro.');
+        } catch (error) {
+            alert(error.message);
+            els.historyReferenceDate.focus();
+            return;
+        }
+        const entreguesList = pendingHistoryOrders.slice();
+        if (!entreguesList.length) return closeHistoryDateDialog();
         if (confirm(`Salvar ${entreguesList.length} pedidos no histórico de ${period.day}, ${period.date.split('-').reverse().join('/')}, limpar a aba Entregues e reiniciar as senhas?`)) {
             const originalText = els.kitchenClearHistoryBtn.textContent;
+            els.historyDateOverlay.classList.add('hidden');
             els.kitchenClearHistoryBtn.disabled = true;
             els.kitchenClearHistoryBtn.textContent = 'Salvando histórico...';
             try {
-                await archiveDeliveredOrders(entreguesList);
+                await archiveDeliveredOrders(entreguesList, period);
                 const clearedAt = Date.now();
-                await CanelaSupabase.state.save('password_sequence', { value: 0, date: period.date, resetAt: clearedAt });
+                const resetDate = getOperationPeriod().date;
+                await CanelaSupabase.state.save('password_sequence', { value: 0, date: resetDate, resetAt: clearedAt });
                 const clearedMarkers = Object.fromEntries(entreguesList.map(order => [order.id, clearedAt]));
                 applyDeletedOrderMarkers(clearedMarkers);
                 applyHistoryClear(clearedAt);
                 publishUpdate({ type: 'CLEAR_HISTORY', clearedAt, deletedOrderIds: clearedMarkers }, false);
-                publishUpdate({ type: 'RESET_PASSWORDS', date: period.date, resetAt: clearedAt }, false);
+                publishUpdate({ type: 'RESET_PASSWORDS', date: resetDate, resetAt: clearedAt }, false);
                 renderAll();
                 alert(`Histórico salvo em ${period.day}, ${period.date.split('-').reverse().join('/')}. A aba Entregues foi limpa e a sequência voltou para 000.`);
+                pendingHistoryOrders = [];
             } catch (error) {
                 console.error('Falha ao salvar histórico:', error);
                 alert('O histórico não foi limpo porque não foi possível confirmá-lo no banco. Verifique a conexão e tente novamente.');
+                els.historyDateOverlay.classList.remove('hidden');
             } finally {
                 els.kitchenClearHistoryBtn.disabled = false;
                 els.kitchenClearHistoryBtn.textContent = originalText;

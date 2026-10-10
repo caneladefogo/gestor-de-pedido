@@ -616,6 +616,11 @@ const els = {
     historySummaryBar: document.getElementById('history-summary-bar'),
     histTotalCount: document.getElementById('hist-total-count'),
     btnClearHistory: document.getElementById('btn-clear-history'),
+    historyDateModal: document.getElementById('history-date-modal'),
+    historyReferenceDate: document.getElementById('attendant-history-reference-date'),
+    closeHistoryDate: document.getElementById('close-history-date-x'),
+    cancelHistoryDate: document.getElementById('cancel-attendant-history-date'),
+    confirmHistoryDate: document.getElementById('confirm-attendant-history-date'),
 
     newOrderModal: document.getElementById('new-order-modal'),
     newOrderClient: document.getElementById('new-order-client'),
@@ -1698,58 +1703,90 @@ function setupEventListeners() {
         switchWaiterTab('pronto');
     };
 
+    let pendingAttendantHistoryOrders = [];
+    const getAttendantHistoryPeriod = dateKey => {
+        if (!/^\d{4}-\d{2}-\d{2}$/.test(dateKey || '')) throw new Error('Selecione uma data válida.');
+        const date = new Date(`${dateKey}T12:00:00-04:00`);
+        if (Number.isNaN(date.getTime())) throw new Error('Selecione uma data válida.');
+        const dateParts = Object.fromEntries(new Intl.DateTimeFormat('en-CA', {
+            timeZone: 'America/Manaus', year: 'numeric', month: '2-digit', day: '2-digit'
+        }).formatToParts(date).filter(part => part.type !== 'literal').map(part => [part.type, part.value]));
+        const normalizedDate = `${dateParts.year}-${dateParts.month}-${dateParts.day}`;
+        if (normalizedDate !== dateKey) throw new Error('Selecione uma data válida.');
+        const weekdayRaw = new Intl.DateTimeFormat('pt-BR', { timeZone: 'America/Manaus', weekday: 'long' }).format(date).replace('-feira', '');
+        const monthRaw = new Intl.DateTimeFormat('pt-BR', { timeZone: 'America/Manaus', month: 'long' }).format(date);
+        return { date:dateKey, day:weekdayRaw.charAt(0).toUpperCase()+weekdayRaw.slice(1), month:monthRaw.charAt(0).toUpperCase()+monthRaw.slice(1), year:Number(dateParts.year) };
+    };
+    const getAttendantToday = () => {
+        const parts = Object.fromEntries(new Intl.DateTimeFormat('en-CA', { timeZone:'America/Manaus', year:'numeric', month:'2-digit', day:'2-digit' }).formatToParts(new Date()).filter(part => part.type !== 'literal').map(part => [part.type,part.value]));
+        return `${parts.year}-${parts.month}-${parts.day}`;
+    };
+    const closeAttendantHistoryDate = () => {
+        els.historyDateModal.classList.add('hidden');
+        pendingAttendantHistoryOrders = [];
+    };
+
     if (els.btnClearHistory) {
-        els.btnClearHistory.onclick = async () => {
-            const entreguesList = Object.values(globalActiveOrders).filter(o => o.items.every(i => i.status === 'entregue') || o.deliveredAt);
-            const entreguesCount = entreguesList.length;
-            if (entreguesCount === 0) {
+        els.btnClearHistory.onclick = () => {
+            pendingAttendantHistoryOrders = Object.values(globalActiveOrders).filter(o => o.items.every(i => i.status === 'entregue') || o.deliveredAt);
+            if (!pendingAttendantHistoryOrders.length) {
                 alert("Não há pedidos entregues para salvar.");
                 return;
             }
-            const date = new Date();
-            const dateParts = Object.fromEntries(new Intl.DateTimeFormat('en-CA', {
-                timeZone: 'America/Manaus', year: 'numeric', month: '2-digit', day: '2-digit'
-            }).formatToParts(date).filter(part => part.type !== 'literal').map(part => [part.type, part.value]));
-            const dateKey = `${dateParts.year}-${dateParts.month}-${dateParts.day}`;
-            const weekdayRaw = new Intl.DateTimeFormat('pt-BR', { timeZone: 'America/Manaus', weekday: 'long' }).format(date);
-            const monthRaw = new Intl.DateTimeFormat('pt-BR', { timeZone: 'America/Manaus', month: 'long' }).format(date);
-            const normalizedWeekday = weekdayRaw.replace('-feira', '');
-            const day = normalizedWeekday.charAt(0).toUpperCase() + normalizedWeekday.slice(1);
-            if (confirm(`Salvar ${entreguesCount} pedidos no histórico de ${day}, ${dateKey.split('-').reverse().join('/')}, limpar a aba Entregues e reiniciar as senhas?`)) {
-                const originalText = els.btnClearHistory.textContent;
-                els.btnClearHistory.disabled = true;
-                els.btnClearHistory.textContent = 'Salvando...';
-                try {
-                    if (!window.CanelaSupabase || !CanelaSupabase.history) throw new Error('Banco de históricos indisponível');
-                    const orders = Object.fromEntries(entreguesList.map(order => [order.id || order.senha, JSON.parse(JSON.stringify(order))]));
-                    await CanelaSupabase.history.archive({
-                        date: dateKey,
-                        day,
-                        month: monthRaw.charAt(0).toUpperCase() + monthRaw.slice(1),
-                        year: Number(dateParts.year),
-                        orders,
-                        savedBy: `atendimento-${waiterName || 'geral'}`
-                    });
-                    const clearedAt = Date.now();
-                    await CanelaSupabase.state.save('password_sequence', { value: 0, date: dateKey, resetAt: clearedAt });
-                    const clearedMarkers = Object.fromEntries(entreguesList.map(order => [order.id, clearedAt]));
-                    applyDeletedOrderMarkers(clearedMarkers);
-                    applyHistoryClear(clearedAt);
-                    publishSync({ type: 'CLEAR_HISTORY', clearedAt, deletedOrderIds: clearedMarkers });
-                    globalSenhaCount = 0;
-                    localStorage.setItem('canela_senha', '0');
-                    localStorage.setItem('canela_senha_date', dateKey);
-                    localStorage.setItem('canela_senha_reset_at', String(clearedAt));
-                    publishSync({ type: 'RESET_PASSWORDS', date: dateKey, resetAt: clearedAt });
-                    renderActiveOrders();
-                    alert(`Histórico salvo em ${day}, ${dateKey.split('-').reverse().join('/')}. A aba Entregues foi limpa e a sequência voltou para 000.`);
-                } catch (error) {
-                    console.error('Falha ao salvar histórico:', error);
-                    alert('O histórico não foi limpo porque não foi possível confirmá-lo no banco. Verifique a conexão e tente novamente.');
-                } finally {
-                    els.btnClearHistory.disabled = false;
-                    els.btnClearHistory.textContent = originalText;
-                }
+            const today = getAttendantToday();
+            els.historyReferenceDate.max = today;
+            els.historyReferenceDate.value = today;
+            els.historyDateModal.classList.remove('hidden');
+            requestAnimationFrame(() => els.historyReferenceDate.focus());
+        };
+    }
+    if (els.closeHistoryDate) els.closeHistoryDate.onclick = closeAttendantHistoryDate;
+    if (els.cancelHistoryDate) els.cancelHistoryDate.onclick = closeAttendantHistoryDate;
+    if (els.historyDateModal) els.historyDateModal.onclick = event => { if (event.target === els.historyDateModal) closeAttendantHistoryDate(); };
+    if (els.confirmHistoryDate) {
+        els.confirmHistoryDate.onclick = async () => {
+            let period;
+            try {
+                period = getAttendantHistoryPeriod(els.historyReferenceDate.value);
+                if (period.date > getAttendantToday()) throw new Error('A data do histórico não pode estar no futuro.');
+            } catch (error) {
+                alert(error.message);
+                els.historyReferenceDate.focus();
+                return;
+            }
+            const entreguesList = pendingAttendantHistoryOrders.slice();
+            if (!entreguesList.length) return closeAttendantHistoryDate();
+            if (!confirm(`Salvar ${entreguesList.length} pedidos no histórico de ${period.day}, ${period.date.split('-').reverse().join('/')}, limpar a aba Entregues e reiniciar as senhas?`)) return;
+            const originalText = els.btnClearHistory.textContent;
+            els.historyDateModal.classList.add('hidden');
+            els.btnClearHistory.disabled = true;
+            els.btnClearHistory.textContent = 'Salvando...';
+            try {
+                if (!window.CanelaSupabase || !CanelaSupabase.history) throw new Error('Banco de históricos indisponível');
+                const orders = Object.fromEntries(entreguesList.map(order => [order.id || order.senha, JSON.parse(JSON.stringify(order))]));
+                await CanelaSupabase.history.archive({ ...period, orders, savedBy:`atendimento-${waiterName || 'geral'}` });
+                const clearedAt = Date.now();
+                const resetDate = getAttendantToday();
+                await CanelaSupabase.state.save('password_sequence', { value:0, date:resetDate, resetAt:clearedAt });
+                const clearedMarkers = Object.fromEntries(entreguesList.map(order => [order.id, clearedAt]));
+                applyDeletedOrderMarkers(clearedMarkers);
+                applyHistoryClear(clearedAt);
+                publishSync({ type:'CLEAR_HISTORY', clearedAt, deletedOrderIds:clearedMarkers });
+                globalSenhaCount = 0;
+                localStorage.setItem('canela_senha', '0');
+                localStorage.setItem('canela_senha_date', resetDate);
+                localStorage.setItem('canela_senha_reset_at', String(clearedAt));
+                publishSync({ type:'RESET_PASSWORDS', date:resetDate, resetAt:clearedAt });
+                pendingAttendantHistoryOrders = [];
+                renderActiveOrders();
+                alert(`Histórico salvo em ${period.day}, ${period.date.split('-').reverse().join('/')}. A aba Entregues foi limpa e a sequência voltou para 000.`);
+            } catch (error) {
+                console.error('Falha ao salvar histórico:', error);
+                alert('O histórico não foi limpo porque não foi possível confirmá-lo no banco. Verifique a conexão e tente novamente.');
+                els.historyDateModal.classList.remove('hidden');
+            } finally {
+                els.btnClearHistory.disabled = false;
+                els.btnClearHistory.textContent = originalText;
             }
         };
     }

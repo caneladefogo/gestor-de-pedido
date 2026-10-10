@@ -105,6 +105,7 @@ Antes de começar, anote a quantidade de pedidos, a sequência de senhas e o est
 - [ ] **HOM-067F — Limpar todos os históricos:** em ambiente controlado, usar “Limpar todo o histórico”; cancelar uma vez para conferir a proteção e depois confirmar a ação.
 - [ ] **HOM-067G — Persistência da limpeza:** após qualquer limpeza, recarregar a página e abrir o histórico em outro dispositivo; os dias apagados não podem reaparecer.
 - [ ] **HOM-067H — Filtros e seleção:** aplicar mês ou busca, usar “Selecionar visíveis” e conferir que somente os dias exibidos são marcados.
+- [ ] **HOM-067I — Data do fechamento:** ao usar “Limpar e Salvar Histórico” na cozinha ou no atendimento, selecionar um dia no calendário; confirmar que datas futuras são bloqueadas e que o arquivo aparece no dia escolhido sem alterar a data operacional do reinício das senhas.
 - [ ] **HOM-068 — Reiniciar senhas:** confirmar que o próximo pedido comum recebe #001.
 - [ ] **HOM-069 — Virada do dia:** simular/validar em ambiente controlado que a primeira senha de um novo dia reinicia em #001.
 

@@ -6,7 +6,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
     <title>Painel da Cozinha - Canela de Fogo</title>
     <link rel="icon" type="image/png" href="logo.png">
-    <link rel="stylesheet" href="cozinha.css?v=20261004-7">
+    <link rel="stylesheet" href="cozinha.css?v=20261010-1">
 </head>
 
 <body>
@@ -27,6 +27,20 @@
             <div id="status" class="status-offline">Aguardando Início...</div>
         </div>
     </header>
+
+    <div id="history-date-overlay" class="overlay hidden">
+        <div class="overlay-modal history-date-modal" role="dialog" aria-modal="true" aria-labelledby="history-date-title">
+            <button id="close-history-date-btn" class="stock-close-btn dialog-close-x" type="button" aria-label="Fechar seleção da data">✕</button>
+            <h2 id="history-date-title">Data do histórico</h2>
+            <p>Informe o dia ao qual os pedidos entregues pertencem.</p>
+            <label for="history-reference-date">Dia de referência</label>
+            <input id="history-reference-date" type="date" required>
+            <div class="history-date-actions">
+                <button id="cancel-history-date-btn" type="button">Cancelar</button>
+                <button id="confirm-history-date-btn" type="button">Continuar</button>
+            </div>
+        </div>
+    </div>
 
     <div id="beverage-stock-overlay" class="overlay hidden">
         <div class="overlay-modal stock-modal">
@@ -186,7 +200,7 @@
 
     <script src="supabase-sync.js?v=20261010-1"></script>
     <script src="persistence.js?v=20261004-6"></script>
-    <script src="cozinha.js?v=20261004-7"></script>
+    <script src="cozinha.js?v=20261010-1"></script>
 </body>
 
 </html>
