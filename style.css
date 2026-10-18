@@ -1418,6 +1418,8 @@ button, a { -webkit-tap-highlight-color: transparent; }
     text-align: center;
 }
 .cart-bar { background: rgba(77,9,14,.98) !important; backdrop-filter: blur(10px); }
+.cart-bar .view-cart-btn { order:-1; }
+.cart-bar .cart-info { order:1; align-items:flex-end; text-align:right; }
 @media (max-width:720px) {
     body { height: 100dvh; }
     .top-nav { position: relative !important; top: auto !important; align-items: stretch; gap: 10px; padding: max(10px,env(safe-area-inset-top)) 16px 12px !important; }
@@ -1429,8 +1431,6 @@ button, a { -webkit-tap-highlight-color: transparent; }
     .table-info, .module-link { justify-content: center; min-width: 0; height: auto; white-space: normal !important; overflow: visible; text-overflow: clip; text-align: center; overflow-wrap: anywhere; }
     .app-container { padding: 18px 16px 96px !important; }
     .cart-bar { justify-content:space-between; }
-    .cart-bar .view-cart-btn { order:-1; }
-    .cart-bar .cart-info { order:1; align-items:flex-end; text-align:right; }
     .orders-toolbar { display: grid !important; grid-template-columns: 1fr; align-items: stretch !important; }
     .orders-toolbar > div { display: grid !important; grid-template-columns: minmax(0,1fr); align-items: stretch !important; min-width: 0; }
     .orders-toolbar h2 { font-size: 1.25rem !important; }
