@@ -609,7 +609,6 @@ const els = {
     activeOrdersScreen: document.getElementById('active-orders-screen'),
     activeOrdersContainer: document.getElementById('active-orders-container'),
     btnNewOrder: document.getElementById('btn-new-order'),
-    waiterFilter: document.getElementById('waiter-filter'),
     orderSearchInput: document.getElementById('order-search-input'),
 
     badgeFila: document.getElementById('badge-fila'),
@@ -749,14 +748,11 @@ window.switchWaiterTab = function (tab) {
 };
 
 function updateTabBadges() {
-    const filterVal = els.waiterFilter ? els.waiterFilter.value : 'meus';
     let countFila = 0;
     let countPronto = 0;
     let countEntregue = 0;
 
     Object.values(globalActiveOrders).forEach(order => {
-        if (filterVal === 'meus' && order.waiterName && order.waiterName.toLowerCase() !== waiterName.toLowerCase()) return;
-
         const hasFila = order.items.some(i => (i.status || 'fila') === 'fila');
         const hasPronto = order.items.some(i => i.status === 'pronto');
         const isEntregue = order.items.every(i => i.status === 'entregue') || order.deliveredAt;
@@ -775,11 +771,11 @@ function updateTabBadges() {
 
 function getWaiterQueueStart(order) {
     const itemStarts = (order.items || [])
-        .filter(item => (item.status || 'fila') === 'fila')
         .map(item => Number(item.queuedAt || 0))
         .filter(value => Number.isFinite(value) && value > 0);
-    const fallback = Number(order.startedAt || order.timestamp || 0);
-    return itemStarts.length ? Math.min(...itemStarts) : (Number.isFinite(fallback) && fallback > 0 ? fallback : Date.now());
+    const candidates = [Number(order.startedAt || 0), Number(order.timestamp || 0), ...itemStarts]
+        .filter(value => Number.isFinite(value) && value > 0);
+    return candidates.length ? Math.min(...candidates) : Date.now();
 }
 
 function getWaiterPriorityRank(order) {
@@ -883,16 +879,20 @@ function getOrderTotal(order) {
 function renderActiveOrders() {
     updateTabBadges();
     els.activeOrdersContainer.innerHTML = '';
-    const filterVal = els.waiterFilter ? els.waiterFilter.value : 'meus';
     const query = searchQuery.trim().toLowerCase();
 
-    const orderList = Object.values(globalActiveOrders).sort((a, b) => (b.timestamp || 0) - (a.timestamp || 0));
+    const orderList = Object.values(globalActiveOrders).sort((a, b) => {
+        if (currentWaiterTab === 'entregue') {
+            return Number(b.deliveredAt || b.timestamp || 0) - Number(a.deliveredAt || a.timestamp || 0);
+        }
+        return getWaiterPriorityRank(b) - getWaiterPriorityRank(a)
+            || getWaiterQueueStart(a) - getWaiterQueueStart(b)
+            || Number(a.timestamp || 0) - Number(b.timestamp || 0);
+    });
 
     let hasAny = false;
 
     orderList.forEach(order => {
-        if (filterVal === 'meus' && order.waiterName && order.waiterName.toLowerCase() !== waiterName.toLowerCase()) return;
-
         if (query) {
             const sMatch = (order.senha || '').toLowerCase().includes(query);
             const cMatch = (order.clientName || '').toLowerCase().includes(query);
@@ -957,7 +957,7 @@ function renderActiveOrders() {
             const showsConsumption = (item.product && item.product.dynamic === 'prato') || itemName.startsWith('Caldo ');
             const itemConsumption = item.consumption === 'levar' || itemName.includes('Para Levar')
                 ? '🛍️ Para levar' : '🍽️ Comer no local';
-            const itemDetails = [item.doneness ? `🔥 Ponto: ${escapeHtml(item.doneness)}` : '', item.note ? `📝 ${escapeHtml(item.note)}` : ''].filter(Boolean).join('<br>');
+            const itemDetails = [item.doneness ? `🔥 Ponto: ${escapeHtml(item.doneness)}` : '', item.fatPreference === 'sem_gordura' ? '🥩 Sem gordura' : '', item.note ? `📝 ${escapeHtml(item.note)}` : ''].filter(Boolean).join('<br>');
             const canConfirmDelivery = ['pronto', 'entregue'].includes(item.status);
             const deliveryCheck = canConfirmDelivery ? `<label class="waiter-item-delivery-check"><input type="checkbox" data-item-id="${escapeHtml(item.id)}" ${item.status === 'entregue' ? 'checked disabled' : ''}> <span>Item entregue</span></label>` : '';
             return `<div class="waiter-inline-detail-item"><strong>${item.qty}x ${itemName}</strong><small>${showsConsumption ? `${itemConsumption} • ` : ''}${detailStatusLabels[item.status || 'fila']}</small>${itemDetails ? `<span class="individual-item-note">${itemDetails}</span>` : ''}${deliveryCheck}</div>`;
@@ -1166,6 +1166,7 @@ function openOrderDetailModal(order) {
                 <span><strong>${item.qty}x</strong> ${itemName}</span>
                 <small>${showsConsumption ? `${consumption} • ` : ''}${statusLabels[item.status || 'fila']}</small>
                 ${item.doneness ? `<span class="individual-item-note">🔥 <strong>Ponto:</strong> ${escapeHtml(item.doneness)}</span>` : ''}
+                ${item.fatPreference === 'sem_gordura' ? `<span class="individual-item-note">🥩 <strong>Sem gordura</strong></span>` : ''}
                 ${item.note ? `<span class="individual-item-note">📝 <strong>Observação do prato:</strong> ${escapeHtml(item.note)}</span>` : ''}
             </div>
         `;
@@ -1336,6 +1337,7 @@ window.openProductOptions = function (productId, editIndex = null) {
     } else if (product.dynamic === "prato") {
         els.modalOptionsTitle.textContent = `Montar Prato: ${product.name}`;
         const acceptsAdditions = product.name.includes('Carne de Sol') || product.name.includes('Misto');
+        const acceptsFatChoice = product.name.includes('Carne de Sol') || product.name.includes('Misto') || product.name.includes('Picanha');
 
         let extras = product.name.includes("Picanha")
             ? ["Tropeiro", "Salada", "Vinagrete", "Farofa", "Macaxeira", "Maionese", "Batata Palha", "Vatapá"]
@@ -1347,9 +1349,14 @@ window.openProductOptions = function (productId, editIndex = null) {
         const additionsHTML = ['Banana Frita', 'Maionese', 'Batata Palha', 'Purê de Batata']
             .map(addition => `<label class="option-checkbox"><input type="checkbox" name="prato-adicional" value="${addition}"><span>${addition} <b>+ ${formatCurrency(getDishAdditionPrice())}</b></span></label>`)
             .join('');
-        const localStep = product.name.includes('Picanha') ? 4 : acceptsAdditions ? 4 : 3;
-        const quantityStep = localStep + 1;
-        const noteStep = quantityStep + 1;
+        let nextStep = 2;
+        const pointStep = product.name.includes('Picanha') ? nextStep++ : null;
+        const fatStep = acceptsFatChoice ? nextStep++ : null;
+        const removeStep = nextStep++;
+        const additionsStep = acceptsAdditions ? nextStep++ : null;
+        const localStep = nextStep++;
+        const quantityStep = nextStep++;
+        const noteStep = nextStep;
 
         els.optionsModalBody.innerHTML = `
             <div class="dish-rice-row">
@@ -1367,7 +1374,7 @@ window.openProductOptions = function (productId, editIndex = null) {
                     </select>
                 </label>
             </div>
-            ${product.name.includes('Picanha') ? `<label><strong>2. Ponto da Picanha:</strong></label>
+            ${product.name.includes('Picanha') ? `<label><strong>${pointStep}. Ponto da Picanha:</strong></label>
             <select id="picanha-point" class="dish-point-select">
                 <option value="Chapeiro define" selected>Chapeiro define</option>
                 <option value="Mal passada">Mal passada</option>
@@ -1376,11 +1383,15 @@ window.openProductOptions = function (productId, editIndex = null) {
                 <option value="Ao ponto para bem passada">Ao ponto para bem passada</option>
                 <option value="Bem passada">Bem passada</option>
             </select>` : ''}
-            <label><strong>${product.name.includes('Picanha') ? '3' : '2'}. Deseja RETIRAR algo?</strong> Marque o que NÃO vai:</label>
+            ${acceptsFatChoice ? `<label><strong>${fatStep}. Preferência da carne:</strong></label>
+            <div class="option-list-box dish-fat-option">
+                <label class="option-checkbox"><input type="checkbox" id="prato-sem-gordura"><span>Sem gordura</span></label>
+            </div>` : ''}
+            <label><strong>${removeStep}. Deseja RETIRAR algo?</strong> Marque o que NÃO vai:</label>
             <div style="margin: 0.5rem 0 1rem 0; background:rgba(0,0,0,0.05); padding:1rem; border-radius:8px; border:1px solid #ddd; color:var(--danger)">
                 ${extrasHTML}
             </div>
-            ${acceptsAdditions ? `<label><strong>3. Adicionais:</strong> Cada item acrescenta ${formatCurrency(getDishAdditionPrice())}:</label>
+            ${acceptsAdditions ? `<label><strong>${additionsStep}. Adicionais:</strong> Cada item acrescenta ${formatCurrency(getDishAdditionPrice())}:</label>
             <div class="option-list-box dish-additions-options">
                 ${additionsHTML}
             </div>` : ''}
@@ -1442,6 +1453,8 @@ function prefillProductOptions(item, type) {
         document.getElementById('prato-local').value = item.consumption === 'levar' ? 'Para Levar' : 'Comer no Local';
         const pointSelect = document.getElementById('picanha-point');
         if (pointSelect && item.doneness) pointSelect.value = item.doneness;
+        const fatCheckbox = document.getElementById('prato-sem-gordura');
+        if (fatCheckbox) fatCheckbox.checked = item.fatPreference === 'sem_gordura';
         document.getElementById('prato-note').value = item.note || '';
         updatePratoPricePreview();
     }
@@ -1544,6 +1557,7 @@ els.btnConfirmOptions.onclick = () => {
         let nName = `${product.name} + ${arroz} ${retiStr}${additionsStr} - ${local}`;
         commitAddToCart(product, nName, preco, getOptionQty(), {
             doneness: document.getElementById('picanha-point') ? document.getElementById('picanha-point').value : '',
+            fatPreference: document.getElementById('prato-sem-gordura')?.checked ? 'sem_gordura' : '',
             note: document.getElementById('prato-note').value.trim(),
             additions
         });
@@ -1563,7 +1577,7 @@ function commitAddToCart(baseProduct, finalName, finalPrice, quantity = 1, itemD
 
     if (pendingEditIndex !== null && currentOrder.items[pendingEditIndex]) {
         const previous = currentOrder.items[pendingEditIndex];
-        currentOrder.items[pendingEditIndex] = { ...previous, product: productCopy, qty: quantity, consumption: newConsumption, doneness: itemDetails.doneness || '', note: itemDetails.note || '', additions: itemDetails.additions || [] };
+        currentOrder.items[pendingEditIndex] = { ...previous, product: productCopy, qty: quantity, consumption: newConsumption, doneness: itemDetails.doneness || '', fatPreference: itemDetails.fatPreference || '', note: itemDetails.note || '', additions: itemDetails.additions || [] };
         updateCartIcon();
         renderCartModalItems();
         return;
@@ -1573,6 +1587,7 @@ function commitAddToCart(baseProduct, finalName, finalPrice, quantity = 1, itemD
         const itemConsumption = item.consumption || (item.product.name.includes('Para Levar') ? 'levar' : 'local');
         return item.product.name === productCopy.name && itemConsumption === newConsumption
             && (item.doneness || '') === (itemDetails.doneness || '') && (item.note || '') === (itemDetails.note || '')
+            && (item.fatPreference || '') === (itemDetails.fatPreference || '')
             && (item.status === 'fila' || !item.status);
     });
     if (existingPos > -1) {
@@ -1586,6 +1601,7 @@ function commitAddToCart(baseProduct, finalName, finalPrice, quantity = 1, itemD
             queuedAt: null,
             consumption: newConsumption,
             doneness: itemDetails.doneness || '',
+            fatPreference: itemDetails.fatPreference || '',
             note: itemDetails.note || '',
             additions: itemDetails.additions || []
         });
@@ -1636,10 +1652,6 @@ function setupEventListeners() {
                 selectWaiterName(n);
             }
         };
-    }
-
-    if (els.waiterFilter) {
-        els.waiterFilter.onchange = () => renderActiveOrders();
     }
 
     if (els.orderSearchInput) {
@@ -1988,6 +2000,7 @@ function renderCartModalItems() {
                 <div class="cart-item-name">${item.product.name}</div>
                 <div class="cart-item-price">${formatCurrency(item.product.price)} un. • ${formatCurrency(item.product.price * item.qty)}</div>
                 ${item.doneness ? `<div class="cart-item-customization">🔥 Ponto: ${escapeHtml(item.doneness)}</div>` : ''}
+                ${item.fatPreference === 'sem_gordura' ? `<div class="cart-item-customization">🥩 Sem gordura</div>` : ''}
                 ${item.note ? `<div class="cart-item-customization">📝 ${escapeHtml(item.note)}</div>` : ''}
                 ${item.status ? `<span style="font-size:0.75rem; color:#888;">Status: ${item.status}</span>` : ''}
                 <select class="item-consumption-select" onchange="changeItemConsumption(${idx}, this.value)">

@@ -1439,7 +1439,7 @@ button, a { -webkit-tap-highlight-color: transparent; }
     .orders-toolbar { display: grid !important; grid-template-columns: 1fr; align-items: stretch !important; }
     .orders-toolbar > div { display: grid !important; grid-template-columns: minmax(0,1fr); align-items: stretch !important; min-width: 0; }
     .orders-toolbar h2 { font-size: 1.25rem !important; }
-    #waiter-filter, #btn-new-order { width: 100%; min-width: 0; white-space: normal; }
+    #btn-new-order { width: 100%; min-width: 0; white-space: normal; }
     .table-grid { grid-template-columns: 1fr; }
     .product-card { padding: 18px !important; }
     .notification-modal, .cart-modal-content { border-radius: 20px 20px 0 0 !important; }

@@ -1727,6 +1727,15 @@ button:active, .module-link:active, .tab-btn:active, .icon-action-btn:active { t
 .prep-block.item-doneness span {
     overflow-wrap: anywhere;
 }
+.prep-block.item-fat-preference {
+    border-left-color: #ff7043;
+    background: #382118;
+}
+.prep-block.item-fat-preference span {
+    color: #ffd2c2;
+    font-weight: 850;
+    overflow-wrap: anywhere;
+}
 
 /* Histórico recolhível e inteligência de acréscimos */
 #kitchen-history-bar {

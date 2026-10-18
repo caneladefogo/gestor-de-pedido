@@ -15,6 +15,8 @@ Antes de começar, anote a quantidade de pedidos, a sequência de senhas e o est
 - [ ] **HOM-003 — Cabeçalho mobile:** em celular, verificar se botões ficam abaixo do título quando necessário e nenhum botão é cortado.
 - [ ] **HOM-004 — Cardápio mobile:** rolar a lista e confirmar que nenhum produto fica escondido pelo cabeçalho ou pela barra do carrinho.
 - [ ] **HOM-004A — Barra do carrinho mobile:** adicionar um item e confirmar que “Ver Pedido”, quantidade e total aparecem agrupados à esquerda, com o total ao lado do botão e sem sobreposição pelo selo do Netlify.
+- [ ] **HOM-004B — Preferência sem gordura:** montar Carne de Sol, Misto e Picanha; confirmar que os três exibem o checkbox “Sem gordura”, que a edição preserva a escolha e que somente itens marcados exibem “SEM GORDURA” na cozinha.
+- [ ] **HOM-004C — Fila única do atendente:** confirmar que não existe filtro por atendente, que pedidos de toda a equipe aparecem e que “Na Fila”/“Prontos” seguem prioridade e entrada real na produção.
 - [ ] **HOM-005 — Diálogos:** abrir os diálogos no desktop e celular; confirmar que cabem na tela, possuem rolagem interna e fecham ao clicar fora.
 - [ ] **HOM-006 — Tecla Enter:** preencher cada diálogo usando Enter; confirmar avanço para o próximo campo e salvamento no último campo aplicável.
 

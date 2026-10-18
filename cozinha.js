@@ -1443,6 +1443,7 @@ function renderKitchenItem(item) {
     const consumptionMatch = name.match(/-\s(Comer no Local|Para Levar)$/);
     const consumption = item.consumption === 'levar' ? 'Para Levar' : item.consumption === 'local' ? 'Comer no Local' : consumptionMatch ? consumptionMatch[1] : 'Comer no Local';
     const doneness = item.doneness ? `<span class="prep-block item-doneness"><b>Ponto da picanha</b><span>🔥 ${escapeKitchenHtml(item.doneness)}</span></span>` : '';
+    const fatPreference = item.fatPreference === 'sem_gordura' ? `<span class="prep-block item-fat-preference"><b>Preferência da carne</b><span>🥩 SEM GORDURA</span></span>` : '';
     const itemNote = item.note ? `<span class="prep-block individual-item-note"><b>Observação do prato</b><span>📝 ${escapeKitchenHtml(item.note)}</span></span>` : '';
 
     if (item.product && item.product.dynamic === 'prato' && name.includes(' + ')) {
@@ -1468,6 +1469,7 @@ function renderKitchenItem(item) {
             <span class="item-name">${baseName}
                 <span class="prep-block"><b>Arroz</b><span>${riceMatch ? riceMatch[1] : 'Não informado'}</span></span>
                 ${doneness}
+                ${fatPreference}
                 ${preparation}
                 ${additions.length ? `<span class="prep-block prep-additions"><b>Adicionais</b><span>${additions.map(escapeKitchenHtml).join(' • ')}</span></span>` : ''}
                 ${itemNote}
