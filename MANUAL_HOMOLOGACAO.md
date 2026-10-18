@@ -14,6 +14,7 @@ Antes de começar, anote a quantidade de pedidos, a sequência de senhas e o est
 - [ ] **HOM-002 — Navegação principal:** alternar entre Cadastro de Pedidos, Painel da Cozinha, Chapeiro e Estoque sem perder os dados.
 - [ ] **HOM-003 — Cabeçalho mobile:** em celular, verificar se botões ficam abaixo do título quando necessário e nenhum botão é cortado.
 - [ ] **HOM-004 — Cardápio mobile:** rolar a lista e confirmar que nenhum produto fica escondido pelo cabeçalho ou pela barra do carrinho.
+- [ ] **HOM-004A — Barra do carrinho mobile:** adicionar um item e confirmar que “Ver Pedido” aparece à esquerda, sem sobreposição pelo selo do Netlify.
 - [ ] **HOM-005 — Diálogos:** abrir os diálogos no desktop e celular; confirmar que cabem na tela, possuem rolagem interna e fecham ao clicar fora.
 - [ ] **HOM-006 — Tecla Enter:** preencher cada diálogo usando Enter; confirmar avanço para o próximo campo e salvamento no último campo aplicável.
 
@@ -26,6 +27,8 @@ Antes de começar, anote a quantidade de pedidos, a sequência de senhas e o est
 - [ ] **HOM-011 — Bebidas sem local:** adicionar bebidas e confirmar que não exibem “Comer no local” nem “Para levar”.
 - [ ] **HOM-012 — Total no cabeçalho:** adicionar e remover itens; confirmar atualização imediata do total no cabeçalho do cadastro.
 - [ ] **HOM-013 — Preços no cardápio:** confirmar valores ao lado do botão de adicionar, incluindo sucos a R$ 8,00.
+- [ ] **HOM-013A — Novos itens:** confirmar Batata Frita em Porções por R$ 15,00 e Sprite Lata em Refrigerantes por R$ 6,00; adicionar ambos e conferir o total.
+- [ ] **HOM-013B — Gerenciamento de preços:** alterar temporariamente os valores de Batata Frita e Sprite Lata no painel da cozinha e confirmar atualização sincronizada no cadastro.
 
 ## 3. Pratos
 
@@ -117,6 +120,7 @@ Antes de começar, anote a quantidade de pedidos, a sequência de senhas e o est
 - [ ] **HOM-073 — Ajuste:** definir saldo e estoque mínimo; conferir alerta de reposição.
 - [ ] **HOM-074 — Baixa por venda:** entregar pedido com bebida e confirmar baixa única no estoque.
 - [ ] **HOM-075 — Zerar individualmente:** usar “Zerar estoque” em uma bebida de teste; confirmar saldo zero, histórico e sincronização.
+- [ ] **HOM-075A — Estoque da Sprite:** confirmar que Sprite Lata aparece no estoque, aceita saldo e mínimo e sofre baixa única após entrega.
 
 ## 12. Persistência, conexão e simultaneidade
 

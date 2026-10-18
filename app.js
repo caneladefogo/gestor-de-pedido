@@ -8,10 +8,13 @@ const DB = {
 
         { id: 3, name: "Caldo", desc: "Montar Caldo", price: 0.00, dynamic: "caldo", category: "Caldos" },
 
+        { id: 22, name: "Batata Frita", desc: "Porção", price: 15.00, category: "Porções" },
+
         { id: 4, name: "Coca-Cola Lata", desc: "350ml", price: 6.00, category: "Refrigerantes" },
         { id: 5, name: "Coca-Cola Zero Lata", desc: "350ml", price: 6.00, category: "Refrigerantes" },
         { id: 6, name: "Fanta Uva Lata", desc: "350ml", price: 6.00, category: "Refrigerantes" },
         { id: 7, name: "Fanta Laranja Lata", desc: "350ml", price: 6.00, category: "Refrigerantes" },
+        { id: 23, name: "Sprite Lata", desc: "350ml", price: 6.00, category: "Refrigerantes" },
 
         { id: 8, name: "Coca-Cola 1L", desc: "1 Litro", price: 12.00, category: "Refrigerantes" },
         { id: 10, name: "Fanta Laranja 1L", desc: "1 Litro", price: 12.00, category: "Refrigerantes" },

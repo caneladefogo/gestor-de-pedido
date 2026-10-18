@@ -73,8 +73,9 @@ const PRODUCT_PRICE_GROUPS = {
     },
     'Refrigerantes': {
         'Coca-Cola Lata': 6, 'Coca-Cola Zero Lata': 6, 'Fanta Uva Lata': 6,
-        'Fanta Laranja Lata': 6, 'Coca-Cola 1L': 12, 'Fanta Laranja 1L': 12, 'Baré 1L': 12
+        'Fanta Laranja Lata': 6, 'Sprite Lata': 6, 'Coca-Cola 1L': 12, 'Fanta Laranja 1L': 12, 'Baré 1L': 12
     },
+    'Porções': { 'Batata Frita': 15 },
     'Sucos e outras bebidas': {
         'Suco de Acerola': 8, 'Suco de Maracujá': 8, 'Água Mineral': 6
     }
@@ -1558,7 +1559,7 @@ document.body.addEventListener('touchstart', keepScreenAlive);
 
 // --- GESTOR DE ESTOQUE DE BEBIDAS ---
 const beverageNames = [
-    'Coca-Cola Lata', 'Coca-Cola Zero Lata', 'Fanta Uva Lata', 'Fanta Laranja Lata',
+    'Coca-Cola Lata', 'Coca-Cola Zero Lata', 'Fanta Uva Lata', 'Fanta Laranja Lata', 'Sprite Lata',
     'Coca-Cola 1L', 'Fanta Laranja 1L', 'Baré 1L',
     'Suco de Acerola', 'Suco de Maracujá', 'Água Mineral'
 ];
