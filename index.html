@@ -6,7 +6,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
     <title>Pedidos - Canela de Fogo</title>
     <link rel="icon" type="image/png" href="logo.png">
-    <link rel="stylesheet" href="style.css?v=20261018-2">
+    <link rel="stylesheet" href="style.css?v=20261018-3">
 </head>
 
 <body>
@@ -143,11 +143,13 @@
 
     <!-- Barra do Carrinho Inferior -->
     <div class="cart-bar hidden" id="cart-bar">
-        <div class="cart-info">
-            <span class="cart-items" style="font-size: 1.1rem; font-weight: bold;"><span id="cart-count">0</span> item(ns) no pedido</span>
-            <strong id="cart-bar-total" class="cart-bar-total">R$ 0,00</strong>
+        <div class="cart-action-summary">
+            <button class="view-cart-btn" id="view-cart-btn">Ver Pedido 🛒</button>
+            <div class="cart-info">
+                <span class="cart-items" style="font-size: 1.1rem; font-weight: bold;"><span id="cart-count">0</span> item(ns) no pedido</span>
+                <strong id="cart-bar-total" class="cart-bar-total">R$ 0,00</strong>
+            </div>
         </div>
-        <button class="view-cart-btn" id="view-cart-btn">Ver Pedido 🛒</button>
     </div>
 
     <!-- Modal das Opções de Prato -->
