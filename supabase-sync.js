@@ -94,6 +94,9 @@
 
     function createClient() {
         const handlers = new Map();
+        const localChannel = typeof BroadcastChannel !== 'undefined'
+            ? new BroadcastChannel('canela_local_sync')
+            : null;
         let polling = false;
         let stopped = false;
         let lastEventId = 0;
@@ -111,6 +114,12 @@
             },
             subscribe(_topic, callback) {
                 if (callback) queueMicrotask(() => callback(client.connected ? null : new Error('Supabase desconectado')));
+                return client;
+            },
+            publishLocal(topic, message) {
+                if (!localChannel) return client;
+                const payload = typeof message === 'string' ? JSON.parse(message) : message;
+                localChannel.postMessage({ topic, payload });
                 return client;
             },
             async publish(topic, message, _options, callback) {
@@ -136,9 +145,18 @@
             end() {
                 stopped = true;
                 client.connected = false;
+                if (localChannel) localChannel.close();
                 return client;
             }
         };
+
+        if (localChannel) {
+            localChannel.onmessage = event => {
+                const data = event && event.data;
+                if (!data || !data.topic) return;
+                emit('message', data.topic, { toString: () => JSON.stringify(data.payload) });
+            };
+        }
 
         function emit(name, ...args) {
             (handlers.get(name) || []).forEach(handler => {

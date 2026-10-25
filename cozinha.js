@@ -482,6 +482,9 @@ function connectSync() {
 }
 
 async function publishUpdate(payload, saveLocally = true) {
+    if (syncClient && typeof syncClient.publishLocal === 'function') {
+        syncClient.publishLocal(topic, payload);
+    }
     const reliable = payload && (payload.type === 'ORDER_UPDATE' || payload.type === 'CLEAR_HISTORY' || payload.type === 'STOCK_UPDATE' || payload.type === 'RESET_PASSWORDS' || payload.type === 'DELETE_ORDER' || payload.type === 'PREP_TIME_SETTINGS' || payload.type === 'PRODUCT_PRICE_SETTINGS');
     if (reliable && window.CanelaPersistence) {
         const queued = await CanelaPersistence.enqueue('cozinha', payload);

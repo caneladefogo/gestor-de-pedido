@@ -473,6 +473,9 @@ function initSync() {
 }
 
 async function publishSync(payload) {
+    if (syncClient && typeof syncClient.publishLocal === 'function') {
+        syncClient.publishLocal(syncTopic, payload);
+    }
     const reliable = payload && (payload.type === 'ORDER_UPDATE' || payload.type === 'CLEAR_HISTORY' || payload.type === 'DELETE_ORDER');
     if (reliable && window.CanelaPersistence) {
         const queued = await CanelaPersistence.enqueue('atendimento', payload);
