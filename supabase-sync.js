@@ -2,6 +2,7 @@
     const SUPABASE_URL = 'https://bcnxnxasvcyocusmwrsn.supabase.co';
     const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImJjbnhueGFzdmN5b2N1c213cnNuIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODc1MDYxODMsImV4cCI6MjEwMzA4MjE4M30.PFewu7mvOFVCFiVV3N9LN71ClohHR9G6DPSjzsiOwFU';
     const API = `${SUPABASE_URL}/rest/v1`;
+    const EMERGENCY_API = '/.netlify/functions/emergency-sync';
     const HEADERS = {
         apikey: SUPABASE_ANON_KEY,
         Authorization: `Bearer ${SUPABASE_ANON_KEY}`,
@@ -102,6 +103,8 @@
         let lastEventId = 0;
         let reconnectTimer = null;
         let reconnectAttempt = 0;
+        let transport = 'supabase';
+        let lastEmergencyKey = '';
 
         const client = {
             connected: false,
@@ -126,11 +129,20 @@
                 if (typeof _options === 'function') callback = _options;
                 try {
                     const payload = typeof message === 'string' ? JSON.parse(message) : message;
-                    await request('sync_events', {
-                        method: 'POST',
-                        headers: { Prefer: 'return=minimal' },
-                        body: JSON.stringify({ topic, payload, created_at: Date.now() })
-                    });
+                    if (transport === 'emergency') {
+                        const response = await fetch(EMERGENCY_API, {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify({ topic, payload })
+                        });
+                        if (!response.ok) throw new Error(`Canal emergencial ${response.status}`);
+                    } else {
+                        await request('sync_events', {
+                            method: 'POST',
+                            headers: { Prefer: 'return=minimal' },
+                            body: JSON.stringify({ topic, payload, created_at: Date.now() })
+                        });
+                    }
                     callback && callback(null);
                 } catch (error) {
                     markOffline(error);
@@ -188,6 +200,16 @@
             if (polling || stopped || !client.connected || document.hidden || !navigator.onLine) return;
             polling = true;
             try {
+                if (transport === 'emergency') {
+                    const response = await fetch(`${EMERGENCY_API}?since=${encodeURIComponent(lastEmergencyKey)}`, { cache: 'no-store' });
+                    if (!response.ok) throw new Error(`Canal emergencial ${response.status}`);
+                    const data = await response.json();
+                    for (const event of data.events || []) {
+                        lastEmergencyKey = event.key > lastEmergencyKey ? event.key : lastEmergencyKey;
+                        emit('message', event.topic, { toString: () => JSON.stringify(event.payload) });
+                    }
+                    return;
+                }
                 const rows = await request(`sync_events?id=gt.${lastEventId}&select=id,topic,payload&order=id.asc&limit=200`);
                 for (const row of rows || []) {
                     lastEventId = Math.max(lastEventId, Number(row.id) || 0);
@@ -210,7 +232,22 @@
                 reconnectAttempt = 0;
                 emit('connect');
             } catch (error) {
-                markOffline(error);
+                try {
+                    const response = await fetch(`${EMERGENCY_API}?since=${encodeURIComponent(lastEmergencyKey)}`, { cache: 'no-store' });
+                    if (!response.ok) throw new Error(`Canal emergencial ${response.status}`);
+                    const data = await response.json();
+                    for (const event of data.events || []) {
+                        lastEmergencyKey = event.key > lastEmergencyKey ? event.key : lastEmergencyKey;
+                        emit('message', event.topic, { toString: () => JSON.stringify(event.payload) });
+                    }
+                    transport = 'emergency';
+                    client.connected = true;
+                    client.reconnecting = false;
+                    reconnectAttempt = 0;
+                    emit('connect');
+                } catch (emergencyError) {
+                    markOffline(emergencyError);
+                }
             }
         }
 

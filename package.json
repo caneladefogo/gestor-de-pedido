@@ -1,0 +1,8 @@
+{
+  "name": "canela-de-fogo-pedidos",
+  "private": true,
+  "version": "1.0.0",
+  "dependencies": {
+    "@netlify/blobs": "11.1.6"
+  }
+}
