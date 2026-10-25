@@ -9,10 +9,18 @@
     };
 
     async function request(path, options = {}) {
-        const response = await fetch(`${API}/${path}`, {
-            ...options,
-            headers: { ...HEADERS, ...(options.headers || {}) }
-        });
+        const controller = new AbortController();
+        const timeout = setTimeout(() => controller.abort(), 8000);
+        let response;
+        try {
+            response = await fetch(`${API}/${path}`, {
+                ...options,
+                signal: controller.signal,
+                headers: { ...HEADERS, ...(options.headers || {}) }
+            });
+        } finally {
+            clearTimeout(timeout);
+        }
         if (!response.ok) {
             const detail = await response.text().catch(() => '');
             const error = new Error(`Supabase ${response.status}: ${detail || response.statusText}`);
@@ -90,6 +98,7 @@
         let stopped = false;
         let lastEventId = 0;
         let reconnectTimer = null;
+        let reconnectAttempt = 0;
 
         const client = {
             connected: false,
@@ -140,11 +149,13 @@
         function scheduleReconnect() {
             if (stopped || reconnectTimer) return;
             client.reconnecting = true;
+            const delay = Math.min(5000 * (2 ** reconnectAttempt), 60000);
+            reconnectAttempt += 1;
             reconnectTimer = setTimeout(() => {
                 reconnectTimer = null;
                 emit('reconnect');
                 connect();
-            }, 2500);
+            }, delay);
         }
 
         function markOffline(error) {
@@ -156,7 +167,7 @@
         }
 
         async function poll() {
-            if (polling || stopped || !client.connected) return;
+            if (polling || stopped || !client.connected || document.hidden || !navigator.onLine) return;
             polling = true;
             try {
                 const rows = await request(`sync_events?id=gt.${lastEventId}&select=id,topic,payload&order=id.asc&limit=200`);
@@ -178,16 +189,24 @@
                 lastEventId = Math.max(lastEventId, Number(newest && newest[0] && newest[0].id) || 0);
                 client.connected = true;
                 client.reconnecting = false;
+                reconnectAttempt = 0;
                 emit('connect');
             } catch (error) {
                 markOffline(error);
             }
         }
 
-        setInterval(poll, 1200);
+        // Evita milhares de consultas por hora em cada celular aberto.
+        setInterval(poll, 5000);
         setTimeout(connect, 0);
-        window.addEventListener('online', connect);
+        window.addEventListener('online', () => {
+            reconnectAttempt = 0;
+            connect();
+        });
         window.addEventListener('offline', () => markOffline(new Error('Sem internet')));
+        document.addEventListener('visibilitychange', () => {
+            if (!document.hidden && navigator.onLine) connect();
+        });
         return client;
     }
 
