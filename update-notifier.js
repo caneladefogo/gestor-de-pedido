@@ -1,4 +1,5 @@
 (function () {
+    // Cada aba compara o deploy carregado com a versão atualmente publicada.
     const CHECK_INTERVAL_MS = 45000;
     let loadedVersion = null;
     let checking = false;
