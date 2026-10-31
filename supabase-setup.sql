@@ -24,12 +24,12 @@ drop policy if exists "canela_insert_state" on public.sync_state;
 drop policy if exists "canela_update_state" on public.sync_state;
 
 create policy "canela_read_events" on public.sync_events for select to anon using (true);
-create policy "canela_insert_events" on public.sync_events for insert to anon with check (true);
 create policy "canela_read_state" on public.sync_state for select to anon using (true);
 create policy "canela_insert_state" on public.sync_state for insert to anon with check (true);
 create policy "canela_update_state" on public.sync_state for update to anon using (true) with check (true);
 grant select, insert, update on table public.sync_state to anon;
-grant select, insert on table public.sync_events to anon;
+grant select on table public.sync_events to anon;
+revoke insert on table public.sync_events from anon, authenticated;
 
 -- Mantém apenas sete dias de eventos transitórios; o estado consolidado fica em sync_state.
 create or replace function public.canela_cleanup_sync_events()
