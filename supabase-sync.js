@@ -236,6 +236,7 @@
                     emit('message', event.topic, { toString: () => JSON.stringify(event.payload) });
                 }
                 transport = 'emergency';
+                document.documentElement.dataset.syncTransport = 'emergency';
                 client.connected = true;
                 client.reconnecting = false;
                 reconnectAttempt = 0;
@@ -251,6 +252,7 @@
         function connect() {
             if (stopped || client.connected || transport === 'connecting') return;
             transport = 'connecting';
+            document.documentElement.dataset.syncTransport = 'connecting';
             clearTimeout(realtimeTimeout);
 
             if (!window.supabase || typeof window.supabase.createClient !== 'function') {
@@ -275,6 +277,7 @@
                         if (status === 'SUBSCRIBED') {
                             clearTimeout(realtimeTimeout);
                             transport = 'realtime';
+                            document.documentElement.dataset.syncTransport = 'realtime';
                             client.connected = true;
                             client.reconnecting = false;
                             reconnectAttempt = 0;
@@ -296,11 +299,13 @@
         // O polling existe apenas no fallback Netlify; o Supabase usa WebSocket.
         setInterval(pollEmergency, 5000);
         transport = 'idle';
+        document.documentElement.dataset.syncTransport = 'idle';
         setTimeout(connect, 0);
         window.addEventListener('online', () => {
             reconnectAttempt = 0;
             client.connected = false;
             transport = 'idle';
+            document.documentElement.dataset.syncTransport = 'idle';
             connect();
         });
         window.addEventListener('offline', () => markOffline(new Error('Sem internet')));
