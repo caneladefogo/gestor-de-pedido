@@ -98,13 +98,15 @@
         const localChannel = typeof BroadcastChannel !== 'undefined'
             ? new BroadcastChannel('canela_local_sync')
             : null;
-        let polling = false;
         let stopped = false;
-        let lastEventId = 0;
         let reconnectTimer = null;
         let reconnectAttempt = 0;
-        let transport = 'supabase';
+        let transport = 'connecting';
         let lastEmergencyKey = '';
+        let realtimeClient = null;
+        let realtimeChannel = null;
+        let realtimeTimeout = null;
+        let emergencyActivating = false;
 
         const client = {
             connected: false,
@@ -129,7 +131,14 @@
                 if (typeof _options === 'function') callback = _options;
                 try {
                     const payload = typeof message === 'string' ? JSON.parse(message) : message;
-                    if (transport === 'emergency') {
+                    if (transport === 'realtime' && realtimeChannel) {
+                        const result = await realtimeChannel.send({
+                            type: 'broadcast',
+                            event: 'sync',
+                            payload: { topic, payload }
+                        });
+                        if (result !== 'ok') throw new Error(`Supabase Realtime: ${result}`);
+                    } else if (transport === 'emergency') {
                         const response = await fetch(EMERGENCY_API, {
                             method: 'POST',
                             headers: { 'Content-Type': 'application/json' },
@@ -137,11 +146,7 @@
                         });
                         if (!response.ok) throw new Error(`Canal emergencial ${response.status}`);
                     } else {
-                        await request('sync_events', {
-                            method: 'POST',
-                            headers: { Prefer: 'return=minimal' },
-                            body: JSON.stringify({ topic, payload, created_at: Date.now() })
-                        });
+                        throw new Error('Canal de sincronização ainda não conectado');
                     }
                     callback && callback(null);
                 } catch (error) {
@@ -157,6 +162,9 @@
             end() {
                 stopped = true;
                 client.connected = false;
+                clearTimeout(realtimeTimeout);
+                clearTimeout(reconnectTimer);
+                if (realtimeClient && realtimeChannel) realtimeClient.removeChannel(realtimeChannel);
                 if (localChannel) localChannel.close();
                 return client;
             }
@@ -196,66 +204,103 @@
             scheduleReconnect();
         }
 
-        async function poll() {
-            if (polling || stopped || !client.connected || document.hidden || !navigator.onLine) return;
-            polling = true;
+        async function pollEmergency() {
+            if (stopped || transport !== 'emergency' || document.hidden || !navigator.onLine) return;
             try {
-                if (transport === 'emergency') {
-                    const response = await fetch(`${EMERGENCY_API}?since=${encodeURIComponent(lastEmergencyKey)}`, { cache: 'no-store' });
-                    if (!response.ok) throw new Error(`Canal emergencial ${response.status}`);
-                    const data = await response.json();
-                    for (const event of data.events || []) {
-                        lastEmergencyKey = event.key > lastEmergencyKey ? event.key : lastEmergencyKey;
-                        emit('message', event.topic, { toString: () => JSON.stringify(event.payload) });
-                    }
-                    return;
-                }
-                const rows = await request(`sync_events?id=gt.${lastEventId}&select=id,topic,payload&order=id.asc&limit=200`);
-                for (const row of rows || []) {
-                    lastEventId = Math.max(lastEventId, Number(row.id) || 0);
-                    emit('message', row.topic, { toString: () => JSON.stringify(row.payload) });
+                const response = await fetch(`${EMERGENCY_API}?since=${encodeURIComponent(lastEmergencyKey)}`, { cache: 'no-store' });
+                if (!response.ok) throw new Error(`Canal emergencial ${response.status}`);
+                const data = await response.json();
+                for (const event of data.events || []) {
+                    lastEmergencyKey = event.key > lastEmergencyKey ? event.key : lastEmergencyKey;
+                    emit('message', event.topic, { toString: () => JSON.stringify(event.payload) });
                 }
             } catch (error) {
                 markOffline(error);
-            } finally {
-                polling = false;
             }
         }
 
-        async function connect() {
-            if (stopped || client.connected) return;
+        async function activateEmergency(realtimeError) {
+            if (stopped || transport === 'emergency' || emergencyActivating) return;
+            emergencyActivating = true;
             try {
-                const newest = await request('sync_events?select=id&order=id.desc&limit=1');
-                lastEventId = Math.max(lastEventId, Number(newest && newest[0] && newest[0].id) || 0);
+                clearTimeout(realtimeTimeout);
+                if (realtimeClient && realtimeChannel) {
+                    await realtimeClient.removeChannel(realtimeChannel).catch(() => {});
+                    realtimeChannel = null;
+                }
+                const response = await fetch(`${EMERGENCY_API}?since=${encodeURIComponent(lastEmergencyKey)}`, { cache: 'no-store' });
+                if (!response.ok) throw new Error(`Canal emergencial ${response.status}`);
+                const data = await response.json();
+                for (const event of data.events || []) {
+                    lastEmergencyKey = event.key > lastEmergencyKey ? event.key : lastEmergencyKey;
+                    emit('message', event.topic, { toString: () => JSON.stringify(event.payload) });
+                }
+                transport = 'emergency';
                 client.connected = true;
                 client.reconnecting = false;
                 reconnectAttempt = 0;
                 emit('connect');
-            } catch (error) {
-                try {
-                    const response = await fetch(`${EMERGENCY_API}?since=${encodeURIComponent(lastEmergencyKey)}`, { cache: 'no-store' });
-                    if (!response.ok) throw new Error(`Canal emergencial ${response.status}`);
-                    const data = await response.json();
-                    for (const event of data.events || []) {
-                        lastEmergencyKey = event.key > lastEmergencyKey ? event.key : lastEmergencyKey;
-                        emit('message', event.topic, { toString: () => JSON.stringify(event.payload) });
-                    }
-                    transport = 'emergency';
-                    client.connected = true;
-                    client.reconnecting = false;
-                    reconnectAttempt = 0;
-                    emit('connect');
-                } catch (emergencyError) {
-                    markOffline(emergencyError);
-                }
+            } catch (emergencyError) {
+                console.warn('Realtime indisponível; fallback também falhou:', realtimeError);
+                markOffline(emergencyError);
+            } finally {
+                emergencyActivating = false;
             }
         }
 
-        // Evita milhares de consultas por hora em cada celular aberto.
-        setInterval(poll, 5000);
+        function connect() {
+            if (stopped || client.connected || transport === 'connecting') return;
+            transport = 'connecting';
+            clearTimeout(realtimeTimeout);
+
+            if (!window.supabase || typeof window.supabase.createClient !== 'function') {
+                activateEmergency(new Error('Biblioteca Supabase Realtime indisponível'));
+                return;
+            }
+
+            try {
+                realtimeClient ||= window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
+                    auth: { persistSession: false, autoRefreshToken: false, detectSessionInUrl: false },
+                    realtime: { params: { eventsPerSecond: 20 } }
+                });
+                if (realtimeChannel) realtimeClient.removeChannel(realtimeChannel).catch(() => {});
+                realtimeChannel = realtimeClient
+                    .channel('canela-pedidos-sync', { config: { broadcast: { self: false, ack: true } } })
+                    .on('broadcast', { event: 'sync' }, event => {
+                        const data = event && event.payload;
+                        if (!data || !data.topic) return;
+                        emit('message', data.topic, { toString: () => JSON.stringify(data.payload) });
+                    })
+                    .subscribe(status => {
+                        if (status === 'SUBSCRIBED') {
+                            clearTimeout(realtimeTimeout);
+                            transport = 'realtime';
+                            client.connected = true;
+                            client.reconnecting = false;
+                            reconnectAttempt = 0;
+                            emit('connect');
+                            return;
+                        }
+                        if (status === 'CHANNEL_ERROR' || status === 'TIMED_OUT' || status === 'CLOSED') {
+                            activateEmergency(new Error(`Supabase Realtime: ${status}`));
+                        }
+                    });
+                realtimeTimeout = setTimeout(() => {
+                    if (transport === 'connecting') activateEmergency(new Error('Tempo limite do Supabase Realtime'));
+                }, 8000);
+            } catch (error) {
+                activateEmergency(error);
+            }
+        }
+
+        // O polling existe apenas no fallback Netlify; o Supabase usa WebSocket.
+        setInterval(pollEmergency, 5000);
+        transport = 'idle';
         setTimeout(connect, 0);
         window.addEventListener('online', () => {
             reconnectAttempt = 0;
+            client.connected = false;
+            transport = 'idle';
             connect();
         });
         window.addEventListener('offline', () => markOffline(new Error('Sem internet')));
