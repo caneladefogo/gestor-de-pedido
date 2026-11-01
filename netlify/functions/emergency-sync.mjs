@@ -19,11 +19,21 @@ export default async (request) => {
 
   try {
     const store = getStore({ name: 'canela-emergency-sync', consistency: 'strong' });
+    const url = new URL(request.url);
 
     if (request.method === 'POST') {
       const raw = await request.text();
       if (raw.length > 500000) return json({ error: 'Atualização muito grande' }, 413);
       const body = JSON.parse(raw || '{}');
+      if (body.kind === 'state') {
+        if (typeof body.scope !== 'string' || !body.scope || body.scope.length > 160 || !body.payload || typeof body.payload !== 'object') {
+          return json({ error: 'Estado inválido' }, 400);
+        }
+        const updatedAt = Number(body.updated_at) || Date.now();
+        const row = { scope: body.scope, payload: body.payload, updated_at: updatedAt };
+        await store.set(`state/${encodeURIComponent(body.scope)}`, JSON.stringify(row));
+        return json({ ok: true, row }, 201);
+      }
       if (!body.topic || !body.payload || typeof body.payload !== 'object') {
         return json({ error: 'Atualização inválida' }, 400);
       }
@@ -33,7 +43,20 @@ export default async (request) => {
       return json({ ok: true, key, timestamp }, 201);
     }
 
-    const url = new URL(request.url);
+    const stateScope = url.searchParams.get('state');
+    if (stateScope) {
+      const value = await store.get(`state/${encodeURIComponent(stateScope)}`, { consistency: 'strong' });
+      return json({ ok: true, row: value ? JSON.parse(value) : null });
+    }
+    if (url.searchParams.get('histories') === '1') {
+      const { blobs } = await store.list({ prefix: 'state/history-' });
+      const rows = (await Promise.all(blobs.map(async entry => {
+        const value = await store.get(entry.key, { consistency: 'strong' });
+        return value ? JSON.parse(value) : null;
+      }))).filter(Boolean).sort((a, b) => String(b.scope).localeCompare(String(a.scope)));
+      return json({ ok: true, rows });
+    }
+
     const since = url.searchParams.get('since') || '';
     const { blobs } = await store.list({ prefix: 'events/' });
     const selected = blobs

@@ -440,8 +440,6 @@ body { background: var(--flat-cream); color: var(--text); }
 
 .icon-action-btn { box-shadow: none !important; border-radius: 14px !important; }
 .edit-order-btn { background: #7652bd !important; }
-.start-prep-btn { background: #2980b9 !important; }
-.mark-ready-btn { background: #259b57 !important; }
 .regress-status-btn { background: #d37a22 !important; }
 .deliver-lane-btn { background: #259b57 !important; color: #fff !important; }
 .delete-kitchen-order-btn { background: #d94b4b !important; }
@@ -1464,25 +1462,6 @@ input:focus, select:focus, textarea:focus { outline: 3px solid rgba(143,74,82,.1
     padding: 0.6rem 0.8rem;
     justify-self: center;
     text-align: center;
-}
-.item-ready-btn {
-    flex: 0 0 auto;
-    align-self: center;
-    margin-left: auto;
-    min-width: 42px;
-    min-height: 42px;
-    padding: 0.45rem;
-    border: 0;
-    border-radius: 12px;
-    background: #259b57;
-    color: #fff;
-    font-size: 1.15rem;
-    cursor: pointer;
-}
-.order-card .configured-item > .item-ready-btn {
-    grid-column: 1 / -1;
-    justify-self: end;
-    margin: 0;
 }
 .queue-position-badge {
     display: inline-flex;

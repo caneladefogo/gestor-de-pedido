@@ -995,26 +995,6 @@ h2 {
 }
 
 /* Animação de Alarme Contínuo */
-.pulse-ring {
-    animation: pulseAlert 0.7s infinite alternate ease-in-out;
-}
-
-@keyframes pulseAlert {
-    from {
-        box-shadow: 0 0 15px rgba(231, 76, 60, 0.5);
-        transform: scale(1);
-    }
-    to {
-        box-shadow: 0 0 45px rgba(231, 76, 60, 0.95);
-        transform: scale(1.03);
-    }
-}
-
-@keyframes bounce {
-    from { transform: translateY(0); }
-    to { transform: translateY(-10px); }
-}
-
 /* Botões do Tipo de Consumo no Modal */
 .tipo-consumo-btn {
     flex: 1;

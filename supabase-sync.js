@@ -4,6 +4,11 @@
     const API = `${SUPABASE_URL}/rest/v1`;
     const EMERGENCY_API = '/.netlify/functions/emergency-sync';
     const TRANSPORT_KEY = 'canela_sync_transport';
+    const requestedTransport = new URLSearchParams(window.location.search).get('sync');
+    if (requestedTransport === 'supabase' || requestedTransport === 'netlify') {
+        localStorage.setItem(TRANSPORT_KEY, requestedTransport);
+    }
+    const selectedTransport = localStorage.getItem(TRANSPORT_KEY) === 'netlify' ? 'netlify' : 'supabase';
     const HEADERS = {
         apikey: SUPABASE_ANON_KEY,
         Authorization: `Bearer ${SUPABASE_ANON_KEY}`,
@@ -34,12 +39,40 @@
         return text ? JSON.parse(text) : null;
     }
 
+    async function emergencyRequest(path = '', options = {}) {
+        const controller = new AbortController();
+        const timeout = setTimeout(() => controller.abort(), 8000);
+        try {
+            const response = await fetch(`${EMERGENCY_API}${path}`, {
+                ...options,
+                signal: controller.signal,
+                headers: { 'Content-Type': 'application/json', ...(options.headers || {}) },
+                cache: 'no-store'
+            });
+            if (!response.ok) throw new Error(`Canal Netlify ${response.status}`);
+            return response.json();
+        } finally {
+            clearTimeout(timeout);
+        }
+    }
+
     const stateApi = {
         async load(scope) {
+            if (selectedTransport === 'netlify') {
+                const data = await emergencyRequest(`?state=${encodeURIComponent(scope)}`);
+                return data.row || null;
+            }
             const rows = await request(`sync_state?scope=eq.${encodeURIComponent(scope)}&select=payload,updated_at&limit=1`);
             return rows && rows[0] ? rows[0] : null;
         },
         async save(scope, payload) {
+            if (selectedTransport === 'netlify') {
+                const data = await emergencyRequest('', {
+                    method: 'POST',
+                    body: JSON.stringify({ kind: 'state', scope, payload, updated_at: Date.now() })
+                });
+                return data.row || null;
+            }
             return request('sync_state?on_conflict=scope', {
                 method: 'POST',
                 headers: { Prefer: 'resolution=merge-duplicates,return=minimal' },
@@ -69,7 +102,9 @@
             return payload;
         },
         async list() {
-            const rows = await request('sync_state?scope=like.history-*&select=scope,payload,updated_at&order=scope.desc');
+            const rows = selectedTransport === 'netlify'
+                ? (await emergencyRequest('?histories=1')).rows || []
+                : await request('sync_state?scope=like.history-*&select=scope,payload,updated_at&order=scope.desc');
             return (rows || []).filter(row => !(row.payload && row.payload.deleted));
         },
         async remove(scopes) {
@@ -102,23 +137,16 @@
         let stopped = false;
         let reconnectTimer = null;
         let reconnectAttempt = 0;
-        const requestedTransport = new URLSearchParams(window.location.search).get('sync');
-        if (requestedTransport === 'supabase' || requestedTransport === 'netlify') {
-            localStorage.setItem(TRANSPORT_KEY, requestedTransport);
-        }
-        const selectedTransport = localStorage.getItem(TRANSPORT_KEY) === 'netlify' ? 'netlify' : 'supabase';
         let transport = 'idle';
-        let lastEmergencyKey = '';
+        let lastEmergencyKey = `events/${String(Date.now()).padStart(13, '0')}-`;
         let realtimeClient = null;
         let realtimeChannel = null;
         let realtimeTimeout = null;
-        document.documentElement.dataset.syncMode = selectedTransport;
 
         const client = {
             connected: false,
             reconnecting: false,
             disconnecting: false,
-            transportMode: selectedTransport,
             on(name, handler) {
                 if (!handlers.has(name)) handlers.set(name, new Set());
                 handlers.get(name).add(handler);

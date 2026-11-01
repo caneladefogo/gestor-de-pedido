@@ -103,7 +103,7 @@ function loadStoredOrders() {
         const parsed = JSON.parse(raw);
         const normalized = {};
         for (let key in parsed) {
-            const ord = parsed[key];
+            const ord = window.normalizeCanelaOrderStatus ? window.normalizeCanelaOrderStatus(parsed[key]) : parsed[key];
             if (deletedOrderIds[ord.id || key]) continue;
             if (shouldSuppressDeliveredOrder(ord)) continue;
             const safeKey = ord.id || ord.senha || key;
@@ -149,21 +149,6 @@ function isFullyDelivered(order) {
     return Boolean(order && ((order.items || []).length > 0 && order.items.every(item => item.status === 'entregue') || order.deliveredAt));
 }
 
-function normalizeDeprecatedReadyStatus(order) {
-    if (!order || !Array.isArray(order.items)) return order;
-    order.items.forEach(item => {
-        if (item.status === 'em_preparo' || item.status === 'pronto') {
-            item.status = 'fila';
-            delete item.preparationStartedAt;
-            delete item.readyAt;
-        }
-    });
-    Object.values(order.statusOverrides || {}).forEach(override => {
-        if (override.status === 'em_preparo' || override.status === 'pronto') override.status = 'fila';
-    });
-    return order;
-}
-
 function shouldSuppressDeliveredOrder(order) {
     if (!historyClearedAt || !isFullyDelivered(order)) return false;
     const completedAt = Number(order.deliveredAt || order.updatedAt || order.timestamp || 0);
@@ -201,7 +186,7 @@ async function hydratePersistentOrders() {
     if (window.CanelaPersistence) {
         const persisted = await CanelaPersistence.loadSnapshot('atendimento_orders');
         if (persisted && typeof persisted === 'object') {
-            Object.values(persisted).forEach(order => processIncomingOrder(order, false));
+            Object.values(persisted).forEach(order => processIncomingOrder(order));
         }
     }
     if (window.CanelaSupabase) {
@@ -217,7 +202,7 @@ async function hydratePersistentOrders() {
                 if (!snapshot || !snapshot.payload) return;
                 applyDeletedOrderMarkers(snapshot.payload.deletedOrderIds);
                 if (snapshot.payload.historyClearedAt) applyHistoryClear(snapshot.payload.historyClearedAt);
-                Object.values(snapshot.payload.orders || {}).forEach(order => processIncomingOrder(order, false));
+                Object.values(snapshot.payload.orders || {}).forEach(order => processIncomingOrder(order));
             });
             if (snapshots[2] && snapshots[2].payload) receiveProductPriceSettings(snapshots[2].payload);
             if (snapshots[3] && snapshots[3].payload) {
@@ -334,7 +319,7 @@ function initSync() {
                     applyDeletedOrderMarkers(data.deletedOrderIds);
                     if (data.historyClearedAt) applyHistoryClear(data.historyClearedAt);
                     let changed = false;
-                    data.orders.forEach(order => { if (processIncomingOrder(order, false)) changed = true; });
+                    data.orders.forEach(order => { if (processIncomingOrder(order)) changed = true; });
                     if (changed) {
                         saveStoredOrders();
                     }
@@ -386,7 +371,7 @@ function initSync() {
 
                 const orderData = data.order || data;
                 if (orderData && (orderData.id || orderData.senha)) {
-                    if (processIncomingOrder(orderData, true)) {
+                    if (processIncomingOrder(orderData)) {
                         saveStoredOrders();
                         renderActiveOrders();
                     }
@@ -442,8 +427,8 @@ async function flushWaiterOutbox() {
     }
 }
 
-function processIncomingOrder(orderData, notifyIfReady) {
-    normalizeDeprecatedReadyStatus(orderData);
+function processIncomingOrder(orderData) {
+    if (window.normalizeCanelaOrderStatus) window.normalizeCanelaOrderStatus(orderData);
     if (!orderData.id) {
         orderData.id = `ord_${orderData.senha}_${orderData.timestamp || Date.now()}`;
     }

@@ -87,10 +87,28 @@
     window.CanelaPersistence = api;
 
     const normalizeStatus = status => status === 'entregue' ? 'entregue' : 'fila';
+    window.normalizeCanelaOrderStatus = function (order) {
+        if (!order || !Array.isArray(order.items)) return order;
+        order.items.forEach(item => {
+            const normalizedStatus = normalizeStatus(item.status);
+            if (item.status !== normalizedStatus) {
+                item.status = normalizedStatus;
+                delete item.preparationStartedAt;
+                delete item.readyAt;
+            }
+        });
+        Object.values(order.statusOverrides || {}).forEach(override => {
+            override.status = normalizeStatus(override.status);
+        });
+        return order;
+    };
     const statusRank = { fila: 0, entregue: 1 };
     window.mergeCanelaOrders = function (current, incoming) {
-        if (!current) return incoming;
-        if (!incoming) return current;
+        if (!current) return window.normalizeCanelaOrderStatus(incoming);
+        if (!incoming) return window.normalizeCanelaOrderStatus(current);
+
+        window.normalizeCanelaOrderStatus(current);
+        window.normalizeCanelaOrderStatus(incoming);
 
         const currentRevision = Number(current.updatedAt || current.timestamp || 0);
         const incomingRevision = Number(incoming.updatedAt || incoming.timestamp || 0);

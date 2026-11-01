@@ -116,7 +116,7 @@ function loadStoredOrders() {
         const parsed = JSON.parse(raw);
         const normalized = {};
         for (let key in parsed) {
-            const ord = normalizeDeprecatedReadyStatus(parsed[key]);
+            const ord = window.normalizeCanelaOrderStatus ? window.normalizeCanelaOrderStatus(parsed[key]) : parsed[key];
             if (deletedOrderIds[ord.id || key]) continue;
             if (shouldSuppressDeliveredOrder(ord)) continue;
             const safeId = ord.id || ord.senha || key;
@@ -162,21 +162,6 @@ function isFullyDelivered(order) {
     return Boolean(order && (((order.items || []).length > 0 && order.items.every(item => item.status === 'entregue')) || order.deliveredAt));
 }
 
-function normalizeDeprecatedReadyStatus(order) {
-    if (!order || !Array.isArray(order.items)) return order;
-    order.items.forEach(item => {
-        if (item.status === 'em_preparo' || item.status === 'pronto') {
-            item.status = 'fila';
-            delete item.preparationStartedAt;
-            delete item.readyAt;
-        }
-    });
-    Object.values(order.statusOverrides || {}).forEach(override => {
-        if (override.status === 'em_preparo' || override.status === 'pronto') override.status = 'fila';
-    });
-    return order;
-}
-
 function shouldSuppressDeliveredOrder(order) {
     if (!historyClearedAt || !isFullyDelivered(order)) return false;
     const completedAt = Number(order.deliveredAt || order.updatedAt || order.timestamp || 0);
@@ -214,7 +199,7 @@ let globalOrders = loadStoredOrders();
 
 async function hydrateKitchenOrders() {
     const mergeOrders = orders => Object.values(orders || {}).forEach(order => {
-        normalizeDeprecatedReadyStatus(order);
+        if (window.normalizeCanelaOrderStatus) window.normalizeCanelaOrderStatus(order);
         if (deletedOrderIds[order.id || order.senha]) return;
         if (shouldSuppressDeliveredOrder(order)) return;
         const id = order.id || order.senha;
@@ -391,7 +376,7 @@ function connectSync() {
                 if (data.productPriceSettings) saveProductPriceSettings(data.productPriceSettings, false);
                 let ordersChanged = false;
                 data.orders.forEach(ord => {
-                    normalizeDeprecatedReadyStatus(ord);
+                    if (window.normalizeCanelaOrderStatus) window.normalizeCanelaOrderStatus(ord);
                     if (deletedOrderIds[ord.id]) return;
                     if (shouldSuppressDeliveredOrder(ord)) return;
                     const safeId = ord.id || `ord_${ord.senha}_${ord.timestamp || Date.now()}`;
@@ -440,7 +425,7 @@ function connectSync() {
             // 4. Pedido individual
             const pedido = data.order || data;
             if (!pedido || (!pedido.id && !pedido.senha)) return;
-            normalizeDeprecatedReadyStatus(pedido);
+            if (window.normalizeCanelaOrderStatus) window.normalizeCanelaOrderStatus(pedido);
 
             const safeId = pedido.id || `ord_${pedido.senha}_${pedido.timestamp || Date.now()}`;
             pedido.id = safeId;
@@ -1425,7 +1410,6 @@ function renderCard(pedido, itemsArr, tabType, containerTarget) {
 function renderKitchenItem(item) {
     const name = item.product && item.product.name ? item.product.name : 'Item sem nome';
     const qty = Number(item.qty) || 1;
-    const readyAction = '';
     const consumptionMatch = name.match(/-\s(Comer no Local|Para Levar)$/);
     const consumption = item.consumption === 'levar' ? 'Para Levar' : item.consumption === 'local' ? 'Comer no Local' : consumptionMatch ? consumptionMatch[1] : 'Comer no Local';
     const doneness = item.doneness ? `<span class="prep-block item-doneness"><b>Ponto da picanha</b><span>🔥 ${escapeKitchenHtml(item.doneness)}</span></span>` : '';
@@ -1461,7 +1445,6 @@ function renderKitchenItem(item) {
                 ${itemNote}
             </span>
             <span class="prep-location ${consumption === 'Para Levar' ? 'to-go' : ''}">${consumption === 'Para Levar' ? '🛍️ PARA LEVAR' : '🍽️ COMER NO LOCAL'}</span>
-            ${readyAction}
         </li>`;
     }
 
@@ -1477,11 +1460,10 @@ function renderKitchenItem(item) {
                 <span class="prep-block"><b>Acompanhamentos</b><span>${accompaniment === 'Sem Acomp.' ? 'Sem acompanhamento' : accompaniment}</span></span>
             </span>
             <span class="prep-location ${consumption === 'Para Levar' ? 'to-go' : ''}">${consumption === 'Para Levar' ? '🛍️ PARA LEVAR' : '🍽️ COMER NO LOCAL'}</span>
-            ${readyAction}
         </li>`;
     }
 
-    return `<li><span class="item-qty">${qty}x</span><span class="item-name">${name}</span>${readyAction}</li>`;
+    return `<li><span class="item-qty">${qty}x</span><span class="item-name">${name}</span></li>`;
 }
 
 // Inicializa Aba Padrão Fila
