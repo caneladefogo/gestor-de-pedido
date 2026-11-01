@@ -118,7 +118,6 @@
                 <label>Estado do pedido<select id="edit-order-status">
                     <option value="preservar">Manter estados atuais</option>
                     <option value="fila">Na fila</option>
-                    <option value="pronto">Pronto</option>
                     <option value="entregue">Entregue</option>
                 </select></label>
                 <label class="edit-order-full">Observação<textarea id="edit-order-obs" rows="2"></textarea></label>
@@ -135,9 +134,6 @@
             <button id="tab-pratos" class="tab-btn"
                 style="background:var(--primary-color); color:#000; border:none; padding:0.8rem 1rem; font-weight:bold; border-radius:8px; flex:1; min-width: 120px; cursor:pointer;"
                 onclick="switchTab('pratos')">Pedidos <span id="count-pratos-total" class="badge-pill">0</span></button>
-            <button id="tab-prontos" class="tab-btn"
-                style="background:#444; color:white; border:none; padding:0.8rem 1rem; font-weight:bold; border-radius:8px; flex:1; min-width: 120px; cursor:pointer;"
-                onclick="switchTab('prontos')">Prontos <span id="kitchen-count-prontos" class="badge-pill">0</span></button>
             <button id="tab-entregues" class="tab-btn"
                 style="background:#444; color:white; border:none; padding:0.8rem 1rem; font-weight:bold; border-radius:8px; flex:1; min-width: 120px; cursor:pointer;"
                 onclick="switchTab('entregues')">Histórico Entregues <span id="kitchen-count-entregues" class="badge-pill">0</span></button>
@@ -181,7 +177,6 @@
         <div class="kanban-board" id="pratos-container">
             <section class="kanban-lane"><h2>Na fila <span id="count-pratos-fila" class="badge-pill">0</span></h2><div class="column new-orders" id="pratos-fila-container"></div></section>
         </div>
-        <div class="column new-orders" id="prontos-container" style="display:none;"></div>
         <div class="column" id="entregues-container" style="display:none;">
             <!-- Itens Entregues -->
         </div>
@@ -199,9 +194,9 @@
     </main>
 
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.118.0/dist/umd/supabase.min.js"></script>
-    <script src="supabase-sync.js?v=20261030-1"></script>
-    <script src="persistence.js?v=20261004-6"></script>
-    <script src="cozinha.js?v=20261018-4"></script>
+    <script src="supabase-sync.js?v=20261101-1"></script>
+    <script src="persistence.js?v=20261101-1"></script>
+    <script src="cozinha.js?v=20261101-1"></script>
     <script src="update-notifier.js?v=20261030-1"></script>
 </body>
 

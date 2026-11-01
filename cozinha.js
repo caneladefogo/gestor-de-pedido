@@ -4,7 +4,6 @@ let kitchenSyncOnline = false;
 
 const els = {
     pratosFilaContainer: document.getElementById('pratos-fila-container'),
-    prontosContainer: document.getElementById('prontos-container'),
     entreguesContainer: document.getElementById('entregues-container'),
     chapeiroContainer: document.getElementById('chapeiro-container'),
     fritadeiraContainer: document.getElementById('fritadeira-container'),
@@ -12,7 +11,6 @@ const els = {
     emptyState: document.getElementById('empty-state'),
     kitchenSearch: document.getElementById('kitchen-search'),
     countPratosFila: document.getElementById('count-pratos-fila'),
-    countProntos: document.getElementById('kitchen-count-prontos'),
     countPratosTotal: document.getElementById('count-pratos-total'),
     countEntregues: document.getElementById('kitchen-count-entregues'),
     countChapeiro: document.getElementById('kitchen-count-chapeiro'),
@@ -167,10 +165,14 @@ function isFullyDelivered(order) {
 function normalizeDeprecatedReadyStatus(order) {
     if (!order || !Array.isArray(order.items)) return order;
     order.items.forEach(item => {
-        if (item.status === 'em_preparo') {
-            item.status = 'pronto';
-            item.readyAt ||= Date.now();
+        if (item.status === 'em_preparo' || item.status === 'pronto') {
+            item.status = 'fila';
+            delete item.preparationStartedAt;
+            delete item.readyAt;
         }
+    });
+    Object.values(order.statusOverrides || {}).forEach(override => {
+        if (override.status === 'em_preparo' || override.status === 'pronto') override.status = 'fila';
     });
     return order;
 }
@@ -674,7 +676,6 @@ if (els.resetPasswordsBtn) {
 function updateKitchenCounters() {
     const counts = { pratosFila: 0 };
     let countPedidosAtivos = 0;
-    let countProntos = 0;
     let countEntregues = 0;
     let countChapeiro = 0;
     let countFritadeira = 0;
@@ -684,7 +685,6 @@ function updateKitchenCounters() {
         const hasOperationalItem = items.some(item => (item.status || 'fila') === 'fila');
         if (hasOperationalItem) countPedidosAtivos++;
         if (items.some(i => (i.status || 'fila') === 'fila')) counts.pratosFila++;
-        if (items.some(i => i.status === 'pronto')) countProntos++;
         const isEntregue = pedido.items.every(i => i.status === 'entregue') || pedido.deliveredAt;
         if (isEntregue) countEntregues++;
         if (items.some(i => (i.status || 'fila') === 'fila' && isChapaItem(i))) countChapeiro++;
@@ -693,7 +693,6 @@ function updateKitchenCounters() {
 
     Object.entries(counts).forEach(([key, value]) => { if (els[`count${key[0].toUpperCase()}${key.slice(1)}`]) els[`count${key[0].toUpperCase()}${key.slice(1)}`].textContent = value; });
     if (els.countPratosTotal) els.countPratosTotal.textContent = countPedidosAtivos;
-    if (els.countProntos) els.countProntos.textContent = countProntos;
     if (els.countEntregues) els.countEntregues.textContent = countEntregues;
     if (els.countChapeiro) els.countChapeiro.textContent = countChapeiro;
     if (els.countFritadeira) els.countFritadeira.textContent = countFritadeira;
@@ -866,7 +865,6 @@ function renderQueueMetrics() {
     if (!els.queueMetrics) return;
     if (currentTab === 'entregues') { els.queueMetrics.innerHTML = ''; return; }
     const lane = currentTab === 'pratos' || currentTab.startsWith('pratos-') ? 'todos' : currentTab === 'chapeiro' ? 'pratos' : currentTab === 'fritadeira' ? 'fritadeira' : null;
-    const stage = currentTab === 'prontos' || currentTab.endsWith('-pronto') ? 'pronto' : null;
     const totals = new Map();
     const chapeiroTotals = { carne: 0, misto: 0, picanha: 0 };
     const fryerTotals = { frango: 0, tambaqui: 0 };
@@ -877,8 +875,7 @@ function renderQueueMetrics() {
         let orderHasPending = false;
         (order.items || []).forEach(item => {
             const itemStatus = item.status || 'fila';
-            if (['chapeiro', 'fritadeira'].includes(currentTab) ? itemStatus !== 'fila' : stage && itemStatus !== stage) return;
-            if (!stage && !['chapeiro', 'fritadeira'].includes(currentTab) && !['fila', 'pronto'].includes(itemStatus)) return;
+            if (itemStatus !== 'fila') return;
             if (lane === 'pratos' && !isChapaItem(item)) return;
             if (lane === 'fritadeira' && !isFryerItem(item)) return;
             orderHasPending = true;
@@ -1066,7 +1063,7 @@ function renderAll() {
     updateKitchenCounters();
     renderQueueMetrics();
 
-    const containers = [els.pratosFilaContainer, els.prontosContainer,
+    const containers = [els.pratosFilaContainer,
         els.entreguesContainer, els.chapeiroContainer, els.fritadeiraContainer];
     containers.forEach(container => { if (container) container.innerHTML = ''; });
 
@@ -1084,14 +1081,13 @@ function renderAll() {
             if (!sMatch && !cMatch && !fMatch && !wMatch && !itemMatch) return;
         }
 
-        const pratosFila = [], pratosPronto = [];
+        const pratosFila = [];
         const entregueItems = [];
         const chapaItems = [];
         const fryerItems = [];
         pedido.items.forEach(item => {
             const st = item.status || 'fila';
             if (st === 'fila') pratosFila.push(item);
-            if (st === 'pronto') pratosPronto.push(item);
             if (isChapaItem(item)) {
                 if (st === 'fila') chapaItems.push(item);
             }
@@ -1100,7 +1096,6 @@ function renderAll() {
         });
 
         if (pratosFila.length) renderCard(pedido, pratosFila, 'pratos-fila', els.pratosFilaContainer);
-        if (pratosPronto.length) renderCard(pedido, pratosPronto, 'prontos', els.prontosContainer);
         if (entregueItems.length > 0 || pedido.deliveredAt) renderCard(pedido, entregueItems.length > 0 ? entregueItems : pedido.items, 'entregues', els.entreguesContainer);
         if (chapaItems.length > 0) renderCard(pedido, chapaItems, 'chapeiro', els.chapeiroContainer);
         if (fryerItems.length > 0) renderCard(pedido, fryerItems, 'fritadeira', els.fritadeiraContainer);
@@ -1108,7 +1103,6 @@ function renderAll() {
 
     const visibleContainers = currentTab === 'pratos'
         ? [els.pratosFilaContainer]
-        : currentTab === 'prontos' ? [els.prontosContainer]
         : currentTab === 'chapeiro' ? [els.chapeiroContainer] : currentTab === 'fritadeira' ? [els.fritadeiraContainer] : [els.entreguesContainer];
     els.emptyState.classList.toggle('hidden', visibleContainers.some(container => container && container.children.length > 0));
 }
@@ -1131,10 +1125,6 @@ function applyItemStatusMetadata(item, status, changedAt = Date.now()) {
     if (status === 'fila') {
         delete item.preparationStartedAt;
         delete item.readyAt;
-        delete item.deliveredAt;
-    } else if (status === 'pronto') {
-        item.preparationStartedAt ||= changedAt;
-        item.readyAt = changedAt;
         delete item.deliveredAt;
     } else if (status === 'entregue') {
         item.deliveredAt = changedAt;
@@ -1186,7 +1176,6 @@ function openEditOrder(pedido) {
             </select></label>
             <label>Estado<select class="edit-item-status">
                 <option value="fila" ${(item.status || 'fila') === 'fila' ? 'selected' : ''}>Na fila</option>
-                <option value="pronto" ${item.status === 'pronto' ? 'selected' : ''}>Pronto</option>
                 <option value="entregue" ${item.status === 'entregue' ? 'selected' : ''}>Entregue</option>
             </select></label>
             <label class="edit-order-remove"><input class="edit-item-remove" type="checkbox"> Excluir</label>
@@ -1281,9 +1270,8 @@ if (els.saveEditOrderBtn) {
 function renderCard(pedido, itemsArr, tabType, containerTarget) {
     const card = document.createElement('div');
     card.className = `order-card ${tabType.endsWith('-fila') ? 'novinho' : ''}`;
-    const isOperational = tabType.startsWith('pratos-') || tabType === 'prontos' || tabType === 'chapeiro';
+    const isOperational = tabType.startsWith('pratos-') || tabType === 'chapeiro';
     const isQueue = tabType.endsWith('-fila');
-    const isReady = tabType === 'prontos' || tabType.endsWith('-pronto');
     if (tabType === 'entregues') {
         card.style.borderColor = "#27ae60";
         card.style.opacity = "0.85";
@@ -1362,9 +1350,8 @@ function renderCard(pedido, itemsArr, tabType, containerTarget) {
         </div>
         ${['chapeiro', 'fritadeira'].includes(tabType) ? `<div class="chapeiro-readonly-hint">👁️ Visualização operacional — a finalização é feita no painel da cozinha.</div>` : ''}
         <button type="button" class="edit-customer-kitchen-btn">👤 Editar dados do cliente</button>
-        ${isQueue ? `<div class="order-footer"><div class="order-footer-actions four-actions"><button class="edit-order-btn icon-action-btn" title="Editar pedido" aria-label="Editar pedido">✏️</button><button class="mark-ready-btn icon-action-btn" title="Marcar como pronto" aria-label="Marcar como pronto">✅</button><button class="deliver-lane-btn icon-action-btn" title="Entregar pedido" aria-label="Entregar pedido">📦</button><button class="delete-kitchen-order-btn icon-action-btn" title="Excluir pedido definitivamente" aria-label="Excluir pedido definitivamente">🗑️</button></div></div>` : ''}
-        ${isReady ? `<div class="order-footer"><div class="order-footer-actions four-actions"><button class="edit-order-btn icon-action-btn" title="Editar pedido" aria-label="Editar pedido">✏️</button><button class="regress-status-btn icon-action-btn" title="Voltar pedido para a fila" aria-label="Voltar pedido para a fila">↩️</button><button class="deliver-lane-btn icon-action-btn" title="Entregar pedido" aria-label="Entregar pedido">📦</button><button class="delete-kitchen-order-btn icon-action-btn" title="Excluir pedido definitivamente" aria-label="Excluir pedido definitivamente">🗑️</button></div></div>` : ''}
-        ${tabType === 'entregues' ? `<div class="order-footer"><div class="order-footer-actions three-actions"><button class="edit-order-btn icon-action-btn" title="Editar pedido" aria-label="Editar pedido">✏️</button><button class="regress-status-btn icon-action-btn" title="Reabrir pedido como pronto" aria-label="Reabrir pedido como pronto">↩️</button><button class="delete-kitchen-order-btn icon-action-btn" title="Excluir pedido definitivamente" aria-label="Excluir pedido definitivamente">🗑️</button></div></div>` : ''}
+        ${isQueue ? `<div class="order-footer"><div class="order-footer-actions three-actions"><button class="edit-order-btn icon-action-btn" title="Editar pedido" aria-label="Editar pedido">✏️</button><button class="deliver-lane-btn icon-action-btn" title="Entregar pedido" aria-label="Entregar pedido">📦</button><button class="delete-kitchen-order-btn icon-action-btn" title="Excluir pedido definitivamente" aria-label="Excluir pedido definitivamente">🗑️</button></div></div>` : ''}
+        ${tabType === 'entregues' ? `<div class="order-footer"><div class="order-footer-actions three-actions"><button class="edit-order-btn icon-action-btn" title="Editar pedido" aria-label="Editar pedido">✏️</button><button class="regress-status-btn icon-action-btn" title="Reabrir pedido na fila" aria-label="Reabrir pedido na fila">↩️</button><button class="delete-kitchen-order-btn icon-action-btn" title="Excluir pedido definitivamente" aria-label="Excluir pedido definitivamente">🗑️</button></div></div>` : ''}
     `;
 
     const noteInput = card.querySelector('.kitchen-note-input');
@@ -1424,16 +1411,12 @@ function renderCard(pedido, itemsArr, tabType, containerTarget) {
         updateTimers();
         timerInterval = setInterval(updateTimers, 1000);
 
-        const readyButton = card.querySelector('.mark-ready-btn');
-        if (readyButton) readyButton.onclick = () => updateOrderItemsStatus(pedido, itemsArr, 'pronto');
-        const regressButton = card.querySelector('.regress-status-btn');
-        if (regressButton && isReady) regressButton.onclick = () => updateOrderItemsStatus(pedido, itemsArr, 'fila');
         const deliverButton = card.querySelector('.deliver-lane-btn');
         if (deliverButton) deliverButton.onclick = () => markOrderDelivered(pedido);
     }
     if (tabType === 'entregues') {
         const regressButton = card.querySelector('.regress-status-btn');
-        if (regressButton) regressButton.onclick = () => updateOrderItemsStatus(pedido, pedido.items || [], 'pronto');
+        if (regressButton) regressButton.onclick = () => updateOrderItemsStatus(pedido, pedido.items || [], 'fila');
     }
 
     containerTarget.append(card);

@@ -3,6 +3,7 @@
     const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImJjbnhueGFzdmN5b2N1c213cnNuIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODc1MDYxODMsImV4cCI6MjEwMzA4MjE4M30.PFewu7mvOFVCFiVV3N9LN71ClohHR9G6DPSjzsiOwFU';
     const API = `${SUPABASE_URL}/rest/v1`;
     const EMERGENCY_API = '/.netlify/functions/emergency-sync';
+    const TRANSPORT_KEY = 'canela_sync_transport';
     const HEADERS = {
         apikey: SUPABASE_ANON_KEY,
         Authorization: `Bearer ${SUPABASE_ANON_KEY}`,
@@ -101,17 +102,23 @@
         let stopped = false;
         let reconnectTimer = null;
         let reconnectAttempt = 0;
-        let transport = 'connecting';
+        const requestedTransport = new URLSearchParams(window.location.search).get('sync');
+        if (requestedTransport === 'supabase' || requestedTransport === 'netlify') {
+            localStorage.setItem(TRANSPORT_KEY, requestedTransport);
+        }
+        const selectedTransport = localStorage.getItem(TRANSPORT_KEY) === 'netlify' ? 'netlify' : 'supabase';
+        let transport = 'idle';
         let lastEmergencyKey = '';
         let realtimeClient = null;
         let realtimeChannel = null;
         let realtimeTimeout = null;
-        let emergencyActivating = false;
+        document.documentElement.dataset.syncMode = selectedTransport;
 
         const client = {
             connected: false,
             reconnecting: false,
             disconnecting: false,
+            transportMode: selectedTransport,
             on(name, handler) {
                 if (!handlers.has(name)) handlers.set(name, new Set());
                 handlers.get(name).add(handler);
@@ -138,7 +145,7 @@
                             payload: { topic, payload }
                         });
                         if (result !== 'ok') throw new Error(`Supabase Realtime: ${result}`);
-                    } else if (transport === 'emergency') {
+                    } else if (transport === 'netlify') {
                         const response = await fetch(EMERGENCY_API, {
                             method: 'POST',
                             headers: { 'Content-Type': 'application/json' },
@@ -156,6 +163,8 @@
                 return client;
             },
             reconnect() {
+                client.connected = false;
+                transport = 'idle';
                 connect();
                 return client;
             },
@@ -185,7 +194,7 @@
         }
 
         function scheduleReconnect() {
-            if (stopped || reconnectTimer) return;
+            if (stopped || reconnectTimer || !navigator.onLine) return;
             client.reconnecting = true;
             const delay = Math.min(5000 * (2 ** reconnectAttempt), 60000);
             reconnectAttempt += 1;
@@ -199,13 +208,15 @@
         function markOffline(error) {
             const wasConnected = client.connected;
             client.connected = false;
+            transport = 'idle';
+            document.documentElement.dataset.syncTransport = `${selectedTransport}-offline`;
             if (wasConnected) emit('offline');
             emit('error', error);
             scheduleReconnect();
         }
 
         async function pollEmergency() {
-            if (stopped || transport !== 'emergency' || document.hidden || !navigator.onLine) return;
+            if (stopped || selectedTransport !== 'netlify' || transport !== 'netlify' || document.hidden || !navigator.onLine) return;
             try {
                 const response = await fetch(`${EMERGENCY_API}?since=${encodeURIComponent(lastEmergencyKey)}`, { cache: 'no-store' });
                 if (!response.ok) throw new Error(`Canal emergencial ${response.status}`);
@@ -219,15 +230,8 @@
             }
         }
 
-        async function activateEmergency(realtimeError) {
-            if (stopped || transport === 'emergency' || emergencyActivating) return;
-            emergencyActivating = true;
+        async function connectNetlify() {
             try {
-                clearTimeout(realtimeTimeout);
-                if (realtimeClient && realtimeChannel) {
-                    await realtimeClient.removeChannel(realtimeChannel).catch(() => {});
-                    realtimeChannel = null;
-                }
                 const response = await fetch(`${EMERGENCY_API}?since=${encodeURIComponent(lastEmergencyKey)}`, { cache: 'no-store' });
                 if (!response.ok) throw new Error(`Canal emergencial ${response.status}`);
                 const data = await response.json();
@@ -235,28 +239,22 @@
                     lastEmergencyKey = event.key > lastEmergencyKey ? event.key : lastEmergencyKey;
                     emit('message', event.topic, { toString: () => JSON.stringify(event.payload) });
                 }
-                transport = 'emergency';
-                document.documentElement.dataset.syncTransport = 'emergency';
+                transport = 'netlify';
+                document.documentElement.dataset.syncTransport = 'netlify';
                 client.connected = true;
                 client.reconnecting = false;
                 reconnectAttempt = 0;
                 emit('connect');
-            } catch (emergencyError) {
-                console.warn('Realtime indisponível; fallback também falhou:', realtimeError);
-                markOffline(emergencyError);
-            } finally {
-                emergencyActivating = false;
+            } catch (error) {
+                markOffline(error);
             }
         }
 
-        function connect() {
-            if (stopped || client.connected || transport === 'connecting') return;
-            transport = 'connecting';
-            document.documentElement.dataset.syncTransport = 'connecting';
+        function connectSupabase() {
             clearTimeout(realtimeTimeout);
 
             if (!window.supabase || typeof window.supabase.createClient !== 'function') {
-                activateEmergency(new Error('Biblioteca Supabase Realtime indisponível'));
+                markOffline(new Error('Biblioteca Supabase Realtime indisponível'));
                 return;
             }
 
@@ -266,7 +264,7 @@
                     realtime: { params: { eventsPerSecond: 20 } }
                 });
                 if (realtimeChannel) realtimeClient.removeChannel(realtimeChannel).catch(() => {});
-                realtimeChannel = realtimeClient
+                const channel = realtimeClient
                     .channel('canela-pedidos-sync', { config: { broadcast: { self: false, ack: true } } })
                     .on('broadcast', { event: 'sync' }, event => {
                         const data = event && event.payload;
@@ -274,6 +272,7 @@
                         emit('message', data.topic, { toString: () => JSON.stringify(data.payload) });
                     })
                     .subscribe(status => {
+                        if (realtimeChannel !== channel) return;
                         if (status === 'SUBSCRIBED') {
                             clearTimeout(realtimeTimeout);
                             transport = 'realtime';
@@ -285,20 +284,28 @@
                             return;
                         }
                         if (status === 'CHANNEL_ERROR' || status === 'TIMED_OUT' || status === 'CLOSED') {
-                            activateEmergency(new Error(`Supabase Realtime: ${status}`));
+                            markOffline(new Error(`Supabase Realtime: ${status}`));
                         }
                     });
+                realtimeChannel = channel;
                 realtimeTimeout = setTimeout(() => {
-                    if (transport === 'connecting') activateEmergency(new Error('Tempo limite do Supabase Realtime'));
-                }, 8000);
+                    if (transport === 'connecting') markOffline(new Error('Tempo limite do Supabase Realtime'));
+                }, 12000);
             } catch (error) {
-                activateEmergency(error);
+                markOffline(error);
             }
         }
 
-        // O polling existe apenas no fallback Netlify; o Supabase usa WebSocket.
+        function connect() {
+            if (stopped || client.connected || transport === 'connecting' || !navigator.onLine) return;
+            transport = 'connecting';
+            document.documentElement.dataset.syncTransport = `${selectedTransport}-connecting`;
+            if (selectedTransport === 'netlify') connectNetlify();
+            else connectSupabase();
+        }
+
+        // O transporte é fixo durante a operação. Netlify só é usado quando ativado explicitamente.
         setInterval(pollEmergency, 5000);
-        transport = 'idle';
         document.documentElement.dataset.syncTransport = 'idle';
         setTimeout(connect, 0);
         window.addEventListener('online', () => {

@@ -16,7 +16,7 @@ Antes de começar, anote a quantidade de pedidos, a sequência de senhas e o est
 - [ ] **HOM-004 — Cardápio mobile:** rolar a lista e confirmar que nenhum produto fica escondido pelo cabeçalho ou pela barra do carrinho.
 - [ ] **HOM-004A — Barra do carrinho mobile:** adicionar um item e confirmar que “Ver Pedido”, quantidade e total aparecem agrupados à esquerda, com o total ao lado do botão e sem sobreposição pelo selo do Netlify.
 - [ ] **HOM-004B — Preferência sem gordura:** montar Carne de Sol, Misto e Picanha; confirmar que os três exibem o checkbox “Sem gordura”, que a edição preserva a escolha e que somente itens marcados exibem “SEM GORDURA” na cozinha.
-- [ ] **HOM-004C — Fila única do atendente:** confirmar que não existe filtro por atendente, que pedidos de toda a equipe aparecem e que “Na Fila”/“Prontos” seguem prioridade e entrada real na produção.
+- [ ] **HOM-004C — Fila única do atendente:** confirmar que não existe filtro por atendente e que pedidos de toda a equipe aparecem em “Na Fila” conforme prioridade e entrada real na produção.
 - [ ] **HOM-005 — Diálogos:** abrir os diálogos no desktop e celular; confirmar que cabem na tela, possuem rolagem interna e fecham ao clicar fora.
 - [ ] **HOM-006 — Tecla Enter:** preencher cada diálogo usando Enter; confirmar avanço para o próximo campo e salvamento no último campo aplicável.
 
@@ -76,18 +76,18 @@ Antes de começar, anote a quantidade de pedidos, a sequência de senhas e o est
 ## 7. Fluxo da cozinha
 
 - [ ] **HOM-047 — Aba Pedidos:** confirmar que todos os itens do pedido aparecem juntos, incluindo pratos, caldos e bebidas.
-- [ ] **HOM-048 — Aba Prontos:** marcar um pedido como pronto e confirmar sua transferência integral para essa aba.
-- [ ] **HOM-049 — Movimentação:** mover um pedido de Fila para Pronto e confirmar a atualização simultânea no atendimento.
-- [ ] **HOM-050 — Entrega pela cozinha:** entregar um pedido pronto e confirmar transferência imediata para Entregues, sem nova notificação.
+- [ ] **HOM-048 — Fluxo direto:** confirmar que não existe estado ou aba “Pronto”; o fluxo operacional deve ser Fila → Entregue.
+- [ ] **HOM-049 — Entrega pela cozinha:** entregar um pedido na fila e confirmar transferência imediata para Entregues.
+- [ ] **HOM-050 — Entrega pelo atendimento:** entregar um pedido na fila e confirmar a mesma atualização no painel da cozinha.
 - [ ] **HOM-051 — Mudança de estado:** editar um pedido e alterar manualmente seu estado; confirmar a coluna de destino.
 - [ ] **HOM-052 — Edição completa pelo painel:** abrir o editor completo e adicionar/remover/configurar pratos, caldos e bebidas como no cadastro.
 - [ ] **HOM-053 — Chapeiro:** confirmar somente Carne e Picanha, com contadores correspondentes e sem controle de finalização.
 - [ ] **HOM-054 — Pedido misto:** enviar prato, caldo e bebida juntos; confirmar que todos aparecem no mesmo cartão.
 
-## 8. Pronto, entrega, alarme e exclusão
+## 8. Entrega e exclusão
 
-- [ ] **HOM-055 — Alarme de pronto:** marcar pedido como pronto; no atendimento, confirmar mensagem para chamar o cliente contendo nome e senha.
-- [ ] **HOM-056 — Entrega pelo atendente:** entregar e confirmar retirada de Prontos e entrada em Entregues.
+- [ ] **HOM-055 — Sem aviso de chamada:** confirmar que não existe alarme ou aviso para chamar cliente.
+- [ ] **HOM-056 — Entrega pelo atendente:** entregar e confirmar retirada da Fila e entrada em Entregues.
 - [ ] **HOM-057 — Entrega pela cozinha:** repetir pelo painel mestre e confirmar sincronização no atendimento.
 - [ ] **HOM-058 — Exclusão definitiva no atendimento:** excluir um pedido de teste e confirmar desaparecimento em todas as telas após recarregar.
 - [ ] **HOM-059 — Exclusão definitiva na cozinha:** repetir no painel; confirmar que não vai para lixeira/histórico e não retorna pela sincronização.
@@ -128,7 +128,7 @@ Antes de começar, anote a quantidade de pedidos, a sequência de senhas e o est
 
 - [ ] **HOM-076 — Recarregamento:** criar pedido de teste, recarregar atendimento e cozinha e confirmar permanência dos dados.
 - [ ] **HOM-077 — Queda de internet no envio:** desligar a rede, enviar pedido, confirmar indicador offline/pendente; religar e confirmar envio automático e ACK da cozinha.
-- [ ] **HOM-078 — Alteração offline:** sem rede, marcar pedido como pronto/entregue; reconectar e confirmar propagação sem duplicidade.
+- [ ] **HOM-078 — Alteração offline:** sem rede, marcar pedido como entregue; reconectar e confirmar propagação sem duplicidade.
 - [ ] **HOM-079 — Recebimento após reconexão:** manter receptor offline enquanto outro aparelho altera um pedido; reconectar e confirmar estado mais recente.
 - [ ] **HOM-080 — Duas telas simultâneas:** editar estados em aparelhos distintos e confirmar convergência para a alteração mais recente.
 - [ ] **HOM-081 — Pedido não some:** manter pedidos abertos por período prolongado, alternar abas e recarregar; confirmar que permanecem.

@@ -86,7 +86,8 @@
 
     window.CanelaPersistence = api;
 
-    const statusRank = { fila: 0, em_preparo: 1, pronto: 2, entregue: 3 };
+    const normalizeStatus = status => status === 'entregue' ? 'entregue' : 'fila';
+    const statusRank = { fila: 0, entregue: 1 };
     window.mergeCanelaOrders = function (current, incoming) {
         if (!current) return incoming;
         if (!incoming) return current;
@@ -109,8 +110,8 @@
                 itemMap.set(key, { ...item });
                 return;
             }
-            const previousStatus = previous.status || 'fila';
-            const incomingStatus = item.status || 'fila';
+            const previousStatus = normalizeStatus(previous.status);
+            const incomingStatus = normalizeStatus(item.status);
             const resolvedStatus = currentRevision === incomingRevision
                 ? ((statusRank[incomingStatus] || 0) >= (statusRank[previousStatus] || 0) ? incomingStatus : previousStatus)
                 : incomingStatus;
@@ -143,7 +144,7 @@
             Object.entries(source).forEach(([itemId, override]) => {
                 const saved = statusOverrides[itemId];
                 if (!saved || Number(override.updatedAt || 0) >= Number(saved.updatedAt || 0)) {
-                    statusOverrides[itemId] = { status: override.status, updatedAt: Number(override.updatedAt || 0) };
+                    statusOverrides[itemId] = { status: normalizeStatus(override.status), updatedAt: Number(override.updatedAt || 0) };
                 }
             });
         });
@@ -156,16 +157,7 @@
                 delete item.preparationStartedAt;
                 delete item.readyAt;
                 delete item.deliveredAt;
-            } else if (override.status === 'em_preparo') {
-                item.preparationStartedAt ||= override.updatedAt;
-                delete item.readyAt;
-                delete item.deliveredAt;
-            } else if (override.status === 'pronto') {
-                item.preparationStartedAt ||= override.updatedAt;
-                item.readyAt = override.updatedAt;
-                delete item.deliveredAt;
             } else if (override.status === 'entregue') {
-                item.readyAt ||= override.updatedAt;
                 item.deliveredAt = override.updatedAt;
             }
         });

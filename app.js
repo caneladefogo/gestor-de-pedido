@@ -152,10 +152,14 @@ function isFullyDelivered(order) {
 function normalizeDeprecatedReadyStatus(order) {
     if (!order || !Array.isArray(order.items)) return order;
     order.items.forEach(item => {
-        if (item.status === 'em_preparo') {
-            item.status = 'pronto';
-            item.readyAt ||= Date.now();
+        if (item.status === 'em_preparo' || item.status === 'pronto') {
+            item.status = 'fila';
+            delete item.preparationStartedAt;
+            delete item.readyAt;
         }
+    });
+    Object.values(order.statusOverrides || {}).forEach(override => {
+        if (override.status === 'em_preparo' || override.status === 'pronto') override.status = 'fila';
     });
     return order;
 }
@@ -250,81 +254,6 @@ function openRequestedOrderEditor() {
     }
     localStorage.removeItem('canela_open_order_id');
     openExistingOrder(order);
-}
-
-// --- SISTEMA DE ÁUDIO E ALARME CONTÍNUO ---
-let waiterAudioCtx = null;
-let alarmInterval = null;
-let isAlarmRinging = false;
-
-function unlockAudio() {
-    if (!waiterAudioCtx) {
-        waiterAudioCtx = new (window.AudioContext || window.webkitAudioContext)();
-    }
-    if (waiterAudioCtx && waiterAudioCtx.state === 'suspended') {
-        waiterAudioCtx.resume();
-    }
-}
-
-document.body.addEventListener('click', unlockAudio);
-document.body.addEventListener('touchstart', unlockAudio);
-
-function playAlarmChime() {
-    unlockAudio();
-    if (!waiterAudioCtx) return;
-
-    try {
-        const notes = [784.00, 987.77, 1318.51, 1567.98];
-        const now = waiterAudioCtx.currentTime;
-
-        notes.forEach((freq, idx) => {
-            const osc = waiterAudioCtx.createOscillator();
-            const gain = waiterAudioCtx.createGain();
-            osc.type = 'sine';
-            osc.frequency.setValueAtTime(freq, now + (idx * 0.1));
-
-            gain.gain.setValueAtTime(0, now + (idx * 0.1));
-            gain.gain.linearRampToValueAtTime(0.7, now + (idx * 0.1) + 0.03);
-            gain.gain.exponentialRampToValueAtTime(0.01, now + (idx * 0.1) + 0.4);
-
-            osc.connect(gain);
-            gain.connect(waiterAudioCtx.destination);
-
-            osc.start(now + (idx * 0.1));
-            osc.stop(now + (idx * 0.1) + 0.45);
-        });
-
-        if (navigator.vibrate) {
-            navigator.vibrate([400, 150, 400, 150, 400]);
-        }
-    } catch (e) {
-        console.warn("Áudio não pôde ser reproduzido:", e);
-    }
-}
-
-function startContinuousAlarm(msg) {
-    if (els.waiterNotifMsg) els.waiterNotifMsg.textContent = msg;
-    if (els.waiterNotifOverlay) els.waiterNotifOverlay.classList.remove('hidden');
-
-    if (isAlarmRinging) return;
-    isAlarmRinging = true;
-
-    playAlarmChime();
-    alarmInterval = setInterval(playAlarmChime, 1300);
-}
-
-function stopContinuousAlarm() {
-    isAlarmRinging = false;
-    if (alarmInterval) {
-        clearInterval(alarmInterval);
-        alarmInterval = null;
-    }
-    if (els.waiterNotifOverlay) {
-        els.waiterNotifOverlay.classList.add('hidden');
-    }
-    if (navigator.vibrate) {
-        navigator.vibrate(0);
-    }
 }
 
 // --- SINCRONIZAÇÃO SUPABASE EM SEGUNDO PLANO ---
@@ -535,13 +464,7 @@ function processIncomingOrder(orderData, notifyIfReady) {
     orderData = window.mergeCanelaOrders ? mergeCanelaOrders(existing, orderData) : orderData;
     const hasChanged = !existing || JSON.stringify(existing) !== JSON.stringify(orderData);
     if (!hasChanged) return false;
-    const oldReadyCount = existing ? (existing.items || []).filter(item => item.status === 'pronto').length : 0;
-    const newReadyCount = (orderData.items || []).filter(item => item.status === 'pronto').length;
-    const matchesWaiter = !orderData.waiterName || !waiterName || orderData.waiterName.toLowerCase() === waiterName.toLowerCase();
     globalActiveOrders[orderData.id] = orderData;
-    if (notifyIfReady && matchesWaiter && newReadyCount > oldReadyCount) {
-        startContinuousAlarm(`📣 Chame ${orderData.clientName}! Senha #${orderData.senha}. O pedido está pronto.`);
-    }
     return true;
 }
 
@@ -552,7 +475,6 @@ function handleAppResume() {
     openRequestedOrderEditor();
 
     keepScreenAlive();
-    unlockAudio();
 
     if (syncClient && syncClient.connected) {
         publishSync({ type: 'REQUEST_SYNC' });
@@ -615,7 +537,6 @@ const els = {
     orderSearchInput: document.getElementById('order-search-input'),
 
     badgeFila: document.getElementById('badge-fila'),
-    badgePronto: document.getElementById('badge-pronto'),
     badgeEntregue: document.getElementById('badge-entregue'),
 
     historySummaryBar: document.getElementById('history-summary-bar'),
@@ -670,10 +591,6 @@ const els = {
     closeDetailModal: document.getElementById('close-detail-modal'),
     btnReopenOrder: document.getElementById('btn-reopen-order'),
 
-    waiterNotifOverlay: document.getElementById('waiter-notif-overlay'),
-    waiterNotifMsg: document.getElementById('waiter-notif-msg'),
-    btnIndoBuscar: document.getElementById('btn-indo-buscar'),
-
     optionsModal: document.getElementById('options-modal'),
     modalOptionsTitle: document.getElementById('modal-options-title'),
     optionsModalBody: document.getElementById('options-modal-body'),
@@ -691,7 +608,6 @@ window.selectWaiterName = function (name) {
     els.activeOrdersScreen.classList.add('view-active');
     renderActiveOrders();
     keepScreenAlive();
-    unlockAudio();
 };
 
 function updateWaiterDisplay() {
@@ -752,21 +668,17 @@ window.switchWaiterTab = function (tab) {
 
 function updateTabBadges() {
     let countFila = 0;
-    let countPronto = 0;
     let countEntregue = 0;
 
     Object.values(globalActiveOrders).forEach(order => {
         const hasFila = order.items.some(i => (i.status || 'fila') === 'fila');
-        const hasPronto = order.items.some(i => i.status === 'pronto');
         const isEntregue = order.items.every(i => i.status === 'entregue') || order.deliveredAt;
 
         if (hasFila) countFila++;
-        if (hasPronto) countPronto++;
         if (isEntregue) countEntregue++;
     });
 
     if (els.badgeFila) els.badgeFila.textContent = countFila;
-    if (els.badgePronto) els.badgePronto.textContent = countPronto;
     if (els.badgeEntregue) els.badgeEntregue.textContent = countEntregue;
 
     if (els.histTotalCount) els.histTotalCount.textContent = countEntregue;
@@ -847,7 +759,7 @@ function renderWaiterTimers(order) {
 }
 
 function renderWaiterStatusFlow(activeStatus) {
-    const steps = [['fila', 'Fila'], ['pronto', 'Pronto'], ['entregue', 'Entregue']];
+    const steps = [['fila', 'Fila'], ['entregue', 'Entregue']];
     const activeIndex = Math.max(0, steps.findIndex(([status]) => status === activeStatus));
     return `<div class="waiter-status-flow">${steps.map(([status, label], index) => `<span class="${index < activeIndex ? 'done' : index === activeIndex ? 'active' : ''}">${label}</span>`).join('')}</div>`;
 }
@@ -911,9 +823,6 @@ function renderActiveOrders() {
         if (currentWaiterTab === 'fila') {
             validItems = order.items.filter(i => (i.status || 'fila') === 'fila');
             shouldShowInTab = validItems.length > 0;
-        } else if (currentWaiterTab === 'pronto') {
-            validItems = order.items.filter(i => i.status === 'pronto');
-            shouldShowInTab = validItems.length > 0;
         } else if (currentWaiterTab === 'entregue') {
             validItems = order.items.filter(i => i.status === 'entregue');
             shouldShowInTab = validItems.length > 0 || order.deliveredAt;
@@ -951,9 +860,9 @@ function renderActiveOrders() {
             <div style="font-size:0.8rem; color:#888; margin-top:0.2rem;">Atend: <strong>${order.waiterName || 'Geral'}</strong></div>
             <div class="waiter-order-total">Total: <strong>${formatCurrency(orderTotal)}</strong></div>
         `;
-        const statusByTab = { fila: 'fila', pronto: 'pronto', entregue: 'entregue' };
+        const statusByTab = { fila: 'fila', entregue: 'entregue' };
         const operationalInfo = currentWaiterTab === 'entregue' ? '' : `${renderWaiterStatusFlow(statusByTab[currentWaiterTab])}${renderWaiterTimers(order)}`;
-        const detailStatusLabels = { fila: 'Na fila', pronto: 'Pronto', entregue: 'Entregue' };
+        const detailStatusLabels = { fila: 'Na fila', entregue: 'Entregue' };
         const detailItemsHTML = order.items.map(item => {
             item.id ||= `item_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
             const itemName = item.product && item.product.name || 'Item';
@@ -961,8 +870,7 @@ function renderActiveOrders() {
             const itemConsumption = item.consumption === 'levar' || itemName.includes('Para Levar')
                 ? '🛍️ Para levar' : '🍽️ Comer no local';
             const itemDetails = [item.doneness ? `🔥 Ponto: ${escapeHtml(item.doneness)}` : '', item.fatPreference === 'sem_gordura' ? '🥩 Sem gordura' : '', item.note ? `📝 ${escapeHtml(item.note)}` : ''].filter(Boolean).join('<br>');
-            const canConfirmDelivery = ['pronto', 'entregue'].includes(item.status);
-            const deliveryCheck = canConfirmDelivery ? `<label class="waiter-item-delivery-check"><input type="checkbox" data-item-id="${escapeHtml(item.id)}" ${item.status === 'entregue' ? 'checked disabled' : ''}> <span>Item entregue</span></label>` : '';
+            const deliveryCheck = `<label class="waiter-item-delivery-check"><input type="checkbox" data-item-id="${escapeHtml(item.id)}" ${item.status === 'entregue' ? 'checked' : ''}> <span>Item entregue</span></label>`;
             return `<div class="waiter-inline-detail-item"><strong>${item.qty}x ${itemName}</strong><small>${showsConsumption ? `${itemConsumption} • ` : ''}${detailStatusLabels[item.status || 'fila']}</small>${itemDetails ? `<span class="individual-item-note">${itemDetails}</span>` : ''}${deliveryCheck}</div>`;
         }).join('');
         const detailsButtonHTML = `<div class="waiter-inline-details-wrap">
@@ -977,17 +885,12 @@ function renderActiveOrders() {
                 </div>
                 ${detailsButtonHTML}
                 <button type="button" class="btn-add-order-items">➕ Adicionar itens</button>
+                <button class="btn-entregar-card">CONFIRMAR ENTREGA ✅</button>
             `;
             div.querySelector('.btn-add-order-items').onclick = event => {
                 event.stopPropagation();
                 openExistingOrder(order);
             };
-        } else if (currentWaiterTab === 'pronto') {
-            div.innerHTML = headerStr + operationalInfo + `
-                <div class="waiter-state-message preparing">✅ ${validItems.length} item(ns) pronto(s) para entrega</div>
-                <button class="btn-entregar-card">CONFIRMAR ENTREGA ✅</button>
-                ${detailsButtonHTML}
-            `;
             div.querySelector('.btn-entregar-card').onclick = event => {
                 event.stopPropagation();
                 deliverOrder(order);
@@ -1069,7 +972,7 @@ function renderActiveOrders() {
 
 function deliverOrder(order) {
     order.items.forEach(i => {
-        if (i.status === 'pronto') {
+        if (i.status !== 'entregue') {
             i.status = 'entregue';
             i.deliveredAt = Date.now();
         }
@@ -1093,11 +996,11 @@ function setWaiterItemDelivered(order, itemId, delivered) {
     if (!item) return;
     const changedAt = Date.now();
     if (delivered) {
-        item.previousStatusBeforeDelivery = 'pronto';
+        item.previousStatusBeforeDelivery = 'fila';
         item.status = 'entregue';
         item.deliveredAt = changedAt;
     } else {
-        item.status = item.previousStatusBeforeDelivery || 'pronto';
+        item.status = 'fila';
         delete item.previousStatusBeforeDelivery;
         delete item.deliveredAt;
     }
@@ -1163,7 +1066,7 @@ function openOrderDetailModal(order) {
         const showsConsumption = (item.product && item.product.dynamic === 'prato') || itemName.startsWith('Caldo ');
         const consumption = item.consumption === 'levar' || itemName.includes('Para Levar')
             ? '🛍️ Para levar' : '🍽️ Comer no local';
-        const statusLabels = { fila: 'Na fila', pronto: 'Pronto', entregue: 'Entregue' };
+        const statusLabels = { fila: 'Na fila', entregue: 'Entregue' };
         itemsHTML += `
             <div class="waiter-detail-item">
                 <span><strong>${item.qty}x</strong> ${itemName}</span>
@@ -1714,13 +1617,6 @@ function setupEventListeners() {
         pendingEditIndex = null;
     };
     document.getElementById('close-options-modal-x').onclick = els.btnCancelOptions.onclick;
-    document.getElementById('close-waiter-notif-x').onclick = stopContinuousAlarm;
-
-    els.btnIndoBuscar.onclick = () => {
-        stopContinuousAlarm();
-        switchWaiterTab('pronto');
-    };
-
     let pendingAttendantHistoryOrders = [];
     const getAttendantHistoryPeriod = dateKey => {
         if (!/^\d{4}-\d{2}-\d{2}$/.test(dateKey || '')) throw new Error('Selecione uma data válida.');

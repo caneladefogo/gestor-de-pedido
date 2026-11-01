@@ -92,9 +92,6 @@
                 <button id="wtab-fila" class="wtab-btn"
                     style="background:var(--primary-color); color:#000; border:none; padding:0.6rem 0.4rem; font-weight:bold; border-radius:6px; flex:1; cursor:pointer; font-size:0.9rem;"
                     onclick="switchWaiterTab('fila')">Na Fila <span id="badge-fila" class="tab-badge">0</span></button>
-                <button id="wtab-pronto" class="wtab-btn"
-                    style="background:#444; color:white; border:none; padding:0.6rem 0.4rem; font-weight:bold; border-radius:6px; flex:1; cursor:pointer; font-size:0.9rem;"
-                    onclick="switchWaiterTab('pronto')">Prontos <span id="badge-pronto" class="tab-badge">0</span></button>
                 <button id="wtab-entregue" class="wtab-btn"
                     style="background:#444; color:white; border:none; padding:0.6rem 0.4rem; font-weight:bold; border-radius:6px; flex:1; cursor:pointer; font-size:0.9rem;"
                     onclick="switchWaiterTab('entregue')">Histórico <span id="badge-entregue" class="tab-badge">0</span></button>
@@ -277,24 +274,10 @@
         </div>
     </div>
 
-    <!-- Modal de Notificação Fixa / Alarme Contínuo do Garçom -->
-    <div id="waiter-notif-overlay" class="notification-overlay hidden">
-        <div class="notification-modal pulse-ring" style="border-color: #e74c3c; border-width: 4px; max-width: 420px; width: 95%;">
-            <button type="button" id="close-waiter-notif-x" class="dialog-close-x" aria-label="Fechar aviso">✕</button>
-            <div style="font-size: 3.5rem; animation: bounce 0.8s infinite alternate;">🛎️</div>
-            <h2 style="color: #e74c3c; font-size: 1.7rem; margin-bottom: 0.5rem;">CHAMAR CLIENTE!</h2>
-            <p id="waiter-notif-msg" class="notification-msg" style="color: #222; font-size: 1.25rem;">Há uma atualização no pedido.</p>
-            <p style="color: #666; font-size: 0.9rem; margin-bottom: 1.5rem;">O alarme sonoro continuará tocando até você clicar no botão abaixo:</p>
-            <button id="btn-indo-buscar" class="btn-indo" style="background: #27ae60; font-size: 1.3rem; padding: 1.2rem; letter-spacing: 0.5px;">
-                📣 CLIENTE CHAMADO
-            </button>
-        </div>
-    </div>
-
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.118.0/dist/umd/supabase.min.js"></script>
-    <script src="supabase-sync.js?v=20261030-1"></script>
-    <script src="persistence.js?v=20261004-6"></script>
-    <script src="app.js?v=20261018-4"></script>
+    <script src="supabase-sync.js?v=20261101-1"></script>
+    <script src="persistence.js?v=20261101-1"></script>
+    <script src="app.js?v=20261101-1"></script>
     <script src="update-notifier.js?v=20261030-1"></script>
 </body>
 
