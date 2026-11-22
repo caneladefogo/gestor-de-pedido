@@ -191,8 +191,16 @@
                 return client;
             },
             reconnect() {
+                clearTimeout(reconnectTimer);
+                reconnectTimer = null;
+                clearTimeout(realtimeTimeout);
                 client.connected = false;
+                client.reconnecting = true;
                 transport = 'idle';
+                if (realtimeClient && realtimeChannel) {
+                    realtimeClient.removeChannel(realtimeChannel).catch(() => {});
+                    realtimeChannel = null;
+                }
                 connect();
                 return client;
             },
