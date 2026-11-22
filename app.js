@@ -3,7 +3,6 @@ const DB = {
         { id: 1, name: "Carne de Sol na Chapa", desc: "Montar Prato", price: 25.00, dynamic: "prato", category: "Pratos" },
         { id: 19, name: "Misto na Chapa", desc: "Montar Prato", price: 25.00, dynamic: "prato", category: "Pratos" },
         { id: 2, name: "Picanha na Chapa", desc: "Montar Prato", price: 35.00, dynamic: "prato", category: "Pratos" },
-        { id: 20, name: "Filé de Frango Frito", desc: "Montar Prato", price: 25.00, dynamic: "prato", category: "Pratos" },
         { id: 21, name: "Filé de Tambaqui Frito", desc: "Montar Prato", price: 35.00, dynamic: "prato", category: "Pratos" },
 
         { id: 3, name: "Caldo", desc: "Montar Caldo", price: 0.00, dynamic: "caldo", category: "Caldos" },
@@ -15,6 +14,7 @@ const DB = {
         { id: 6, name: "Fanta Uva Lata", desc: "350ml", price: 6.00, category: "Refrigerantes" },
         { id: 7, name: "Fanta Laranja Lata", desc: "350ml", price: 6.00, category: "Refrigerantes" },
         { id: 23, name: "Sprite Lata", desc: "350ml", price: 6.00, category: "Refrigerantes" },
+        { id: 24, name: "Guaraná Antarctica", desc: "350ml", price: 6.00, category: "Refrigerantes" },
 
         { id: 8, name: "Coca-Cola 1L", desc: "1 Litro", price: 12.00, category: "Refrigerantes" },
         { id: 10, name: "Fanta Laranja 1L", desc: "1 Litro", price: 12.00, category: "Refrigerantes" },
@@ -463,6 +463,8 @@ function handleAppResume() {
 
     if (syncClient && syncClient.connected) {
         publishSync({ type: 'REQUEST_SYNC' });
+    } else if (syncClient && navigator.onLine) {
+        syncClient.reconnect();
     }
 }
 
@@ -1229,6 +1231,7 @@ window.openProductOptions = function (productId, editIndex = null) {
         els.modalOptionsTitle.textContent = `Montar Prato: ${product.name}`;
         const acceptsAdditions = product.name.includes('Carne de Sol') || product.name.includes('Misto');
         const acceptsFatChoice = product.name.includes('Carne de Sol') || product.name.includes('Misto') || product.name.includes('Picanha');
+        const acceptsFamilySize = product.name.includes('Carne de Sol') || product.name.includes('Picanha');
 
         let extras = product.name.includes("Picanha")
             ? ["Tropeiro", "Salada", "Vinagrete", "Farofa", "Macaxeira", "Maionese", "Batata Palha", "Vatapá"]
@@ -1250,6 +1253,11 @@ window.openProductOptions = function (productId, editIndex = null) {
         const noteStep = nextStep;
 
         els.optionsModalBody.innerHTML = `
+            ${acceptsFamilySize ? `<label><strong>Tipo do prato:</strong></label>
+            <select id="prato-tamanho" class="dish-point-select">
+                <option value="individual" selected>Individual — ${formatCurrency(product.price)}</option>
+                <option value="familia">Família — ${formatCurrency(getFamilyDishPrice(product))}</option>
+            </select>` : ''}
             <div class="dish-rice-row">
                 <label><strong>1. Vai querer arroz?</strong>
                     <select id="prato-quer-arroz">
@@ -1304,6 +1312,7 @@ window.openProductOptions = function (productId, editIndex = null) {
             <div id="prato-price-preview" class="configured-product-price"></div>
         `;
         document.getElementById('prato-quer-arroz').addEventListener('change', updateDishRiceChoice);
+        document.getElementById('prato-tamanho')?.addEventListener('change', updatePratoPricePreview);
         document.querySelectorAll('input[name="prato-adicional"]').forEach(input => input.addEventListener('change', updatePratoPricePreview));
         document.getElementById('option-qty').addEventListener('input', updatePratoPricePreview);
         updatePratoPricePreview();
@@ -1342,6 +1351,8 @@ function prefillProductOptions(item, type) {
         const additions = Array.isArray(item.additions) ? item.additions : additionsMatch ? additionsMatch[1].split(',').map(value => value.trim()) : [];
         document.querySelectorAll('input[name="prato-adicional"]').forEach(input => input.checked = additions.includes(input.value));
         document.getElementById('prato-local').value = item.consumption === 'levar' ? 'Para Levar' : 'Comer no Local';
+        const sizeSelect = document.getElementById('prato-tamanho');
+        if (sizeSelect) sizeSelect.value = item.servingSize === 'familia' || name.startsWith('Prato Família - ') ? 'familia' : 'individual';
         const pointSelect = document.getElementById('picanha-point');
         if (pointSelect && item.doneness) pointSelect.value = item.doneness;
         const fatCheckbox = document.getElementById('prato-sem-gordura');
@@ -1371,6 +1382,13 @@ function getDishAdditionPrice() {
     return Number.isFinite(configured) && configured >= 0 ? configured : 3;
 }
 
+function getFamilyDishPrice(product) {
+    const key = product.name.includes('Picanha') ? 'Prato família de Picanha' : 'Prato família de Carne de Sol';
+    const defaultPrice = product.name.includes('Picanha') ? 100 : 70;
+    const configured = Number(productPriceSettings.items && productPriceSettings.items[key]);
+    return Number.isFinite(configured) && configured >= 0 ? configured : defaultPrice;
+}
+
 function updateCaldoPricePreview() {
     const size = document.getElementById('caldo-tamanho');
     const flavor = document.getElementById('caldo-sabor');
@@ -1388,7 +1406,9 @@ function updatePratoPricePreview() {
     const product = DB.products.find(entry => entry.id === pendingProductId);
     if (!product) return;
     const additionsCount = document.querySelectorAll('input[name="prato-adicional"]:checked').length;
-    const unitPrice = Number(product.price) + (additionsCount * getDishAdditionPrice());
+    const familySize = document.getElementById('prato-tamanho')?.value === 'familia';
+    const basePrice = familySize ? getFamilyDishPrice(product) : Number(product.price);
+    const unitPrice = basePrice + (additionsCount * getDishAdditionPrice());
     const quantity = getOptionQty();
     preview.textContent = `Unitário: ${formatCurrency(unitPrice)} • Total: ${formatCurrency(unitPrice * quantity)}`;
 }
@@ -1444,13 +1464,15 @@ els.btnConfirmOptions.onclick = () => {
         const retiStr = retiradas.length > 0 ? `[TIRAR: ${retiradas.join(', ')}]` : '[COMPLETO]';
         const additionsStr = additions.length > 0 ? ` [ADICIONAIS: ${additions.join(', ')}]` : '';
 
-        let preco = Number(product.price) + (additions.length * getDishAdditionPrice());
-        let nName = `${product.name} + ${arroz} ${retiStr}${additionsStr} - ${local}`;
+        const familySize = document.getElementById('prato-tamanho')?.value === 'familia';
+        let preco = (familySize ? getFamilyDishPrice(product) : Number(product.price)) + (additions.length * getDishAdditionPrice());
+        let nName = `${familySize ? 'Prato Família - ' : ''}${product.name} + ${arroz} ${retiStr}${additionsStr} - ${local}`;
         commitAddToCart(product, nName, preco, getOptionQty(), {
             doneness: document.getElementById('picanha-point') ? document.getElementById('picanha-point').value : '',
             fatPreference: document.getElementById('prato-sem-gordura')?.checked ? 'sem_gordura' : '',
             note: document.getElementById('prato-note').value.trim(),
-            additions
+            additions,
+            servingSize: familySize ? 'familia' : 'individual'
         });
     }
 

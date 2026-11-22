@@ -56,7 +56,8 @@ let prepTimeSettings = loadPrepTimeSettings();
 const PRODUCT_PRICE_GROUPS = {
     'Pratos': {
         'Carne de Sol na Chapa': 25, 'Misto na Chapa': 25, 'Picanha na Chapa': 35,
-        'Filé de Frango Frito': 25, 'Filé de Tambaqui Frito': 35,
+        'Prato família de Carne de Sol': 70, 'Prato família de Picanha': 100,
+        'Filé de Tambaqui Frito': 35,
         'Adicional do prato': 3
     },
     'Caldos': {
@@ -71,7 +72,8 @@ const PRODUCT_PRICE_GROUPS = {
     },
     'Refrigerantes': {
         'Coca-Cola Lata': 6, 'Coca-Cola Zero Lata': 6, 'Fanta Uva Lata': 6,
-        'Fanta Laranja Lata': 6, 'Sprite Lata': 6, 'Coca-Cola 1L': 12, 'Fanta Laranja 1L': 12, 'Baré 1L': 12
+        'Fanta Laranja Lata': 6, 'Sprite Lata': 6, 'Guaraná Antarctica': 6,
+        'Coca-Cola 1L': 12, 'Fanta Laranja 1L': 12, 'Baré 1L': 12
     },
     'Porções': { 'Batata Frita': 15 },
     'Sucos e outras bebidas': {
@@ -1491,6 +1493,8 @@ function handleKitchenResume() {
 
     if (syncClient && syncClient.connected) {
         publishUpdate({ type: 'REQUEST_SYNC' }, false);
+    } else if (syncClient && navigator.onLine) {
+        syncClient.reconnect();
     } else if (navigator.onLine) {
         connectSync();
     }
@@ -1529,7 +1533,7 @@ document.body.addEventListener('touchstart', keepScreenAlive);
 
 // --- GESTOR DE ESTOQUE DE BEBIDAS ---
 const beverageNames = [
-    'Coca-Cola Lata', 'Coca-Cola Zero Lata', 'Fanta Uva Lata', 'Fanta Laranja Lata', 'Sprite Lata',
+    'Coca-Cola Lata', 'Coca-Cola Zero Lata', 'Fanta Uva Lata', 'Fanta Laranja Lata', 'Sprite Lata', 'Guaraná Antarctica',
     'Coca-Cola 1L', 'Fanta Laranja 1L', 'Baré 1L',
     'Suco de Acerola', 'Suco de Maracujá', 'Água Mineral'
 ];
